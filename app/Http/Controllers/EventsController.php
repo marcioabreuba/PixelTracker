@@ -37,9 +37,9 @@ class EventsController extends Controller
     {
         // Debug logs para identificar o problema
         Log::info('=== DEBUG EVENTS CONTROLLER ===');
-        Log::info('Request data:', $request->all());
-        Log::info('Content ID:', $request->post('contentId'));
-        Log::info('Config domains:', config('conversions.domains'));
+        Log::info('Request data:', ['data' => $request->all()]);
+        Log::info('Content ID:', ['contentId' => $request->post('contentId')]);
+        Log::info('Config domains:', ['domains' => config('conversions.domains')]);
         
         // Log::info('Recebendo Payload:', $request->all());
         try {
