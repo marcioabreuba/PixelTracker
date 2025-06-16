@@ -5,16 +5,26 @@ echo "PORT: $PORT"
 echo "APP_ENV: $APP_ENV"
 echo "APP_KEY exists: $([ -n "$APP_KEY" ] && echo "YES" || echo "NO")"
 
+# Forçar sessões em arquivo
+export SESSION_DRIVER=file
+
 # Aguardar um pouco para garantir que tudo esteja pronto
 sleep 2
 
 echo "=== CRIANDO DIRETÓRIOS NECESSÁRIOS ==="
 # Criar diretório de sessões se não existir
 mkdir -p /var/www/html/storage/framework/sessions
-chmod -R 755 /var/www/html/storage/framework/sessions
-chown -R www-data:www-data /var/www/html/storage/framework/sessions
+mkdir -p /var/www/html/storage/framework/cache
+mkdir -p /var/www/html/storage/framework/views
+chmod -R 755 /var/www/html/storage/framework
+chown -R www-data:www-data /var/www/html/storage/framework
 
-echo "=== LIMPANDO CACHE ==="
+echo "=== LIMPEZA AGRESSIVA DE CACHE ==="
+# Remover arquivos de cache manualmente
+rm -rf /var/www/html/storage/framework/cache/*
+rm -rf /var/www/html/storage/framework/views/*
+rm -rf /var/www/html/bootstrap/cache/*
+
 # Limpar todos os caches possíveis
 php artisan config:clear || echo "Config clear failed"
 php artisan cache:clear || echo "Cache clear failed"
