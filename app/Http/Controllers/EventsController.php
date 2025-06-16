@@ -45,7 +45,11 @@ class EventsController extends Controller
         try {
             // Executar o login no GeoLite
             // ==================================================
-            $reader = new Reader(storage_path('app/geoip/GeoLite2-City.mmdb'));
+            $geoipPath = storage_path('app/geoip/GeoLite2-City.mmdb');
+            if (!file_exists($geoipPath) || filesize($geoipPath) < 100) {
+                throw new \Exception('GeoIP database not available');
+            }
+            $reader = new Reader($geoipPath);
             $ip = $request->ip();
             $record = $reader->city($ip);
             
@@ -115,10 +119,10 @@ class EventsController extends Controller
             ]);
 
             $eventType = $validatedData['eventType'];
-            $event_source_url = $validatedData['event_source_url'];
-            $_fbc = $validatedData['_fbc'];
-            $_fbp = $validatedData['_fbp'];
-            $userId = $validatedData['userId'];
+            $event_source_url = $validatedData['event_source_url'] ?? '';
+            $_fbc = $validatedData['_fbc'] ?? '';
+            $_fbp = $validatedData['_fbp'] ?? '';
+            $userId = $validatedData['userId'] ?? '';
             
             $initData = ConversionsApi::getUserData();
             

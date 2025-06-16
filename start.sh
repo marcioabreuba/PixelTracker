@@ -16,8 +16,13 @@ echo "=== CRIANDO DIRETÓRIOS NECESSÁRIOS ==="
 mkdir -p /var/www/html/storage/framework/sessions
 mkdir -p /var/www/html/storage/framework/cache
 mkdir -p /var/www/html/storage/framework/views
+mkdir -p /var/www/html/storage/app/geoip
 chmod -R 755 /var/www/html/storage/framework
 chown -R www-data:www-data /var/www/html/storage/framework
+
+# Criar arquivo GeoIP dummy para evitar erro
+echo "dummy" > /var/www/html/storage/app/geoip/GeoLite2-City.mmdb
+chmod 644 /var/www/html/storage/app/geoip/GeoLite2-City.mmdb
 
 echo "=== LIMPEZA AGRESSIVA DE CACHE ==="
 # Remover arquivos de cache manualmente
