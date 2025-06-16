@@ -48,7 +48,7 @@ class EventsController extends Controller
             
             // Validar se é um IP válido
             if (filter_var($clientIp, FILTER_VALIDATE_IP)) {
-                Log::info('IP Real do Cliente (X-Forwarded-For):', [
+                Log::error('IP Real do Cliente (X-Forwarded-For):', [
                     'client_ip' => $clientIp,
                     'full_header' => $xForwardedFor,
                     'all_ips' => array_map('trim', $ips)
@@ -73,7 +73,7 @@ class EventsController extends Controller
             if (!empty($ip)) {
                 $ip = trim($ip);
                 if (filter_var($ip, FILTER_VALIDATE_IP)) {
-                    Log::info('IP Encontrado em Header Alternativo:', [
+                    Log::error('IP Encontrado em Header Alternativo:', [
                         'header' => $headerName,
                         'ip' => $ip
                     ]);
@@ -84,7 +84,7 @@ class EventsController extends Controller
 
         // PRIORIDADE 3: Fallback para request IP
         $fallbackIp = $request->ip();
-        Log::warning('Usando IP Request como Fallback:', [
+        Log::error('Usando IP Request como Fallback:', [
             'fallback_ip' => $fallbackIp
         ]);
         return $fallbackIp;
@@ -93,19 +93,27 @@ class EventsController extends Controller
     public function send(Request $request)
     {
         // Debug logs para identificar o problema
-        Log::info('=== DEBUG EVENTS CONTROLLER ===');
-        Log::info('Request data:', ['data' => $request->all()]);
-        Log::info('Content ID:', ['contentId' => $request->post('contentId')]);
-        Log::info('Config domains:', ['domains' => config('conversions.domains')]);
-        
-        // Log::info('Recebendo Payload:', $request->all());
+        Log::error('=== DEBUG EVENTS CONTROLLER ===');
+        Log::error('Request data:', ['data' => $request->all()]);
+        Log::error('Content ID:', ['contentId' => $request->post('contentId')]);
+        Log::error('Config domains:', ['domains' => config('conversions.domains')]);
         
         // Debug completo de headers para entender o que está disponível
-        Log::info('=== HEADERS DEBUG ===', [
+        Log::error('=== HEADERS DEBUG ===', [
             'all_headers' => $request->headers->all(),
             'server_vars' => array_filter($_SERVER, function($key) {
                 return strpos($key, 'HTTP_') === 0 || in_array($key, ['REMOTE_ADDR', 'SERVER_ADDR']);
             }, ARRAY_FILTER_USE_KEY)
+        ]);
+        
+        // Debug específico de IP
+        $detectedIp = $this->getRealClientIP($request);
+        Log::error('=== IP DETECTION RESULT ===', [
+            'detected_ip' => $detectedIp,
+            'request_ip' => $request->ip(),
+            'x_forwarded_for' => $request->header('X-Forwarded-For'),
+            'cf_connecting_ip' => $request->header('CF-Connecting-IP'),
+            'x_real_ip' => $request->header('X-Real-IP')
         ]);
         
         try {
@@ -125,6 +133,18 @@ class EventsController extends Controller
             $state = strtolower($record->mostSpecificSubdivision->isoCode);
             $city = strtolower($record->city->name);
             $postalCode = $record->postal->code;
+            
+            // Debug da geolocalização
+            Log::error('=== GEOIP RESULT ===', [
+                'ip_used' => $ip,
+                'country' => $country,
+                'state' => $state,
+                'city_original' => $record->city->name,
+                'city_processed' => $city,
+                'postal_code' => $postalCode,
+                'latitude' => $record->location->latitude,
+                'longitude' => $record->location->longitude
+            ]);
 
             // Substitui acentos manualmente
             // ==================================================
