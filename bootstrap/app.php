@@ -24,6 +24,10 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->validateCsrfTokens(except: [
             '/events/send',
             '/webhook/hotmart',
+            '/webhook/shopify',
+            '/webhook/yampi',
+            '/webhook/digital',
+            '/shopify/add-to-cart',
         ]);
         $middleware->EncryptCookies(except: [
             '_fbp',

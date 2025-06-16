@@ -86,6 +86,16 @@ Route::get('/db-test', function () {
     }
 });
 
+// Debug route for webhook
+Route::get('/webhook/shopify', function () {
+    return response()->json([
+        'status' => 'webhook_endpoint_ok',
+        'message' => 'Webhook endpoint is working. Use POST method for actual webhooks.',
+        'timestamp' => now(),
+        'methods_allowed' => ['POST']
+    ]);
+});
+
 Route::middleware(['auth:sanctum'])->group(function () {
 });
 
