@@ -134,10 +134,18 @@ async function sendEvent(eventType, data = {}) {
                 pixelData.content_ids = [contentId];
             }
 
+            // Filtrar parâmetros indesejados
+            const eventOptions = { eventID: responseData.eventID };
+            
+            // Remover parâmetros automáticos indesejados do Facebook
+            if (window.fbq && window.fbq.disableAutoConfig) {
+                window.fbq.disableAutoConfig();
+            }
+
             if (customEvents.includes(eventType)) {
-                fbq('trackCustom', eventType, pixelData, { eventID: responseData.eventID });
+                fbq('trackCustom', eventType, pixelData, eventOptions);
             } else {
-                fbq('track', eventType, pixelData, { eventID: responseData.eventID });
+                fbq('track', eventType, pixelData, eventOptions);
             }
             
             console.log(`✅ Evento ${eventType} enviado para Pixel (client-side) com eventID: ${responseData.eventID}`);
@@ -212,6 +220,15 @@ async function initPixel() {
     s=b.getElementsByTagName(e)[0];
     s.parentNode.insertBefore(t,s)
 }(window, document, 'script', 'https://connect.facebook.net/en_US/fbevents.js');
+
+// Configurações para controlar parâmetros automáticos
+window.fbq = window.fbq || function() {
+    (window.fbq.q = window.fbq.q || []).push(arguments);
+};
+
+// Desabilitar configurações automáticas indesejadas
+fbq('set', 'autoConfig', false, '676999668497170');
+fbq('set', 'agent', 'custom-shopify-tracker', '676999668497170');
 
 // Configurar eventos automáticos do Shopify
 function setupShopifyEvents() {
