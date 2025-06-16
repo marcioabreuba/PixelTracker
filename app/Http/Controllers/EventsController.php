@@ -95,9 +95,42 @@ class EventsController extends Controller
             }
         }
 
-        // Se não encontrou um IP público válido, usar o IP do request como fallback
+        // Se não encontrou um IP público válido, tentar IPs válidos mesmo que sejam de proxy
+        foreach ($headers as $header) {
+            $ip = $request->server($header);
+            if (!empty($ip)) {
+                if (strpos($ip, ',') !== false) {
+                    $ips = explode(',', $ip);
+                    foreach ($ips as $singleIp) {
+                        $singleIp = trim($singleIp);
+                        // Aceitar qualquer IP válido (mesmo de proxy) como fallback
+                        if (filter_var($singleIp, FILTER_VALIDATE_IP)) {
+                            Log::info('IP Proxy Aceito como Fallback:', [
+                                'header' => $header,
+                                'ip' => $singleIp,
+                                'all_headers' => $allHeaders
+                            ]);
+                            return $singleIp;
+                        }
+                    }
+                } else {
+                    $ip = trim($ip);
+                    // Aceitar qualquer IP válido (mesmo de proxy) como fallback
+                    if (filter_var($ip, FILTER_VALIDATE_IP)) {
+                        Log::info('IP Proxy Aceito como Fallback:', [
+                            'header' => $header,
+                            'ip' => $ip,
+                            'all_headers' => $allHeaders
+                        ]);
+                        return $ip;
+                    }
+                }
+            }
+        }
+
+        // Se ainda não encontrou nada, usar o IP do request como último recurso
         $fallbackIp = $request->ip();
-        Log::warning('Usando IP Fallback:', [
+        Log::warning('Usando IP Request como Último Recurso:', [
             'fallback_ip' => $fallbackIp,
             'all_headers' => $allHeaders
         ]);
@@ -113,6 +146,15 @@ class EventsController extends Controller
         Log::info('Config domains:', ['domains' => config('conversions.domains')]);
         
         // Log::info('Recebendo Payload:', $request->all());
+        
+        // Debug completo de headers para entender o que está disponível
+        Log::info('=== HEADERS DEBUG ===', [
+            'all_headers' => $request->headers->all(),
+            'server_vars' => array_filter($_SERVER, function($key) {
+                return strpos($key, 'HTTP_') === 0 || in_array($key, ['REMOTE_ADDR', 'SERVER_ADDR']);
+            }, ARRAY_FILTER_USE_KEY)
+        ]);
+        
         try {
             // Executar o login no GeoLite
             // ==================================================
