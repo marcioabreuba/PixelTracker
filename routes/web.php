@@ -66,6 +66,26 @@ Route::get('/env-test', function () {
     ]);
 });
 
+// Rota ULTRA simples - só para testar se Laravel carrega
+Route::get('/ultra-simple', function () {
+    return 'LARAVEL_WORKING_BASIC';
+});
+
+// Rota para testar sem usar facades
+Route::get('/no-facades', function () {
+    return response('NO_FACADES_TEST', 200, ['Content-Type' => 'text/plain']);
+});
+
+// Rota para testar conexão com banco
+Route::get('/db-test', function () {
+    try {
+        \DB::connection()->getPdo();
+        return response()->json(['db_status' => 'CONNECTED']);
+    } catch (\Exception $e) {
+        return response()->json(['db_status' => 'ERROR', 'message' => $e->getMessage()]);
+    }
+});
+
 Route::middleware(['auth:sanctum'])->group(function () {
 });
 
