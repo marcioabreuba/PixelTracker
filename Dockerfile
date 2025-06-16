@@ -1,4 +1,5 @@
-# Use PHP 8.2 with Apache
+# PixelTracker - Facebook Conversions API
+# Force rebuild: 2025-06-16-20:08
 FROM php:8.2-apache
 
 # Install system dependencies
