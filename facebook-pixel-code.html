@@ -1,0 +1,112 @@
+<!-- Facebook Pixel Code -->
+<script>
+!function(f,b,e,v,n,t,s)
+{if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+n.queue=[];t=b.createElement(e);t.async=!0;
+t.src=v;s=b.getElementsByTagName(e)[0];
+s.parentNode.insertBefore(t,s)}(window, document,'script',
+'https://connect.facebook.net/en_US/fbevents.js');
+
+fbq('init', '676999668497170');
+fbq('track', 'PageView');
+</script>
+
+<noscript>
+<img height="1" width="1" style="display:none"
+src="https://www.facebook.com/tr?id=676999668497170&ev=PageView&noscript=1"/>
+</noscript>
+<!-- End Facebook Pixel Code -->
+
+<!-- Pixel Avançado com Eventos Personalizados -->
+<script>
+// Configuração avançada do pixel
+window.fbAsyncInit = function() {
+    // Configurações adicionais se necessário
+};
+
+// Função para enviar eventos personalizados
+function trackCustomEvent(eventName, parameters = {}) {
+    if (typeof fbq !== 'undefined') {
+        fbq('track', eventName, parameters);
+    }
+}
+
+// Eventos automáticos de scroll
+let scrollEvents = {
+    '25': false,
+    '50': false,
+    '75': false,
+    '90': false
+};
+
+window.addEventListener('scroll', function() {
+    const scrollPercent = Math.round((window.scrollY / (document.body.scrollHeight - window.innerHeight)) * 100);
+    
+    Object.keys(scrollEvents).forEach(percent => {
+        if (scrollPercent >= parseInt(percent) && !scrollEvents[percent]) {
+            scrollEvents[percent] = true;
+            trackCustomEvent('Scroll_' + percent);
+        }
+    });
+});
+
+// Evento de tempo na página (1 minuto)
+setTimeout(function() {
+    trackCustomEvent('Timer_1min');
+}, 60000);
+
+// Eventos de vídeo (se houver vídeos na página)
+document.addEventListener('DOMContentLoaded', function() {
+    const videos = document.querySelectorAll('video');
+    videos.forEach(video => {
+        let videoEvents = {
+            '25': false,
+            '50': false,
+            '75': false,
+            '90': false
+        };
+        
+        video.addEventListener('play', function() {
+            trackCustomEvent('PlayVideo');
+        });
+        
+        video.addEventListener('timeupdate', function() {
+            const percent = Math.round((video.currentTime / video.duration) * 100);
+            
+            Object.keys(videoEvents).forEach(threshold => {
+                if (percent >= parseInt(threshold) && !videoEvents[threshold]) {
+                    videoEvents[threshold] = true;
+                    trackCustomEvent('ViewVideo_' + threshold);
+                }
+            });
+        });
+    });
+});
+
+// Evento de AddToCart (para botões de adicionar ao carrinho)
+document.addEventListener('click', function(e) {
+    // Detectar cliques em botões de adicionar ao carrinho
+    if (e.target.matches('[data-action="add-to-cart"], .add-to-cart, .btn-add-cart, [name="add"]')) {
+        trackCustomEvent('AddToCart');
+    }
+    
+    // Detectar cliques em botões de checkout
+    if (e.target.matches('[data-action="checkout"], .checkout-btn, .btn-checkout, [href*="checkout"]')) {
+        trackCustomEvent('InitiateCheckout');
+    }
+});
+
+// Evento de ViewContent para páginas de produto
+if (window.location.pathname.includes('/products/') || window.location.pathname.includes('/produto/')) {
+    trackCustomEvent('ViewContent');
+}
+
+// Evento de Lead para formulários
+document.addEventListener('submit', function(e) {
+    if (e.target.matches('form[data-lead="true"], .lead-form, .contact-form, .newsletter-form')) {
+        trackCustomEvent('Lead');
+    }
+});
+</script> 
