@@ -1,17 +1,10 @@
 services:
   - type: web
     name: pixeltracker
-    env: php
+    env: docker
     region: virginia
     plan: free
-    buildCommand: |
-      composer install --no-dev --optimize-autoloader
-      php artisan config:cache
-      php artisan route:cache
-      php artisan view:cache
-    startCommand: |
-      php artisan migrate --force
-      php artisan serve --host=0.0.0.0 --port=$PORT
+    dockerfilePath: ./Dockerfile
     envVars:
       - key: APP_NAME
         value: PixelTracker
@@ -19,6 +12,8 @@ services:
         value: production
       - key: APP_DEBUG
         value: false
+      - key: APP_KEY
+        sync: false
       - key: APP_URL
         value: https://traqueamentophp.onrender.com
       - key: LOG_LEVEL
@@ -33,8 +28,6 @@ services:
         value: database
       - key: QUEUE_CONNECTION
         value: database
-      - key: PORT
-        value: 10000
       - key: DB_CONNECTION
         value: pgsql
       - key: DB_HOST
@@ -57,6 +50,16 @@ services:
         fromDatabase:
           name: pixeltracker-db
           property: password
+      - key: FACEBOOK_PIXEL_ID
+        sync: false
+      - key: FACEBOOK_ACCESS_TOKEN
+        sync: false
+      - key: FACEBOOK_TEST_CODE
+        sync: false
+      - key: MAXMIND_ACCOUNT_ID
+        sync: false
+      - key: MAXMIND_LICENSE_KEY
+        sync: false
 
 databases:
   - name: pixeltracker-db
