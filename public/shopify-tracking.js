@@ -283,4 +283,4 @@ window.initShopifyFBTracking = function(config) {
 // Auto-inicializar se configuração estiver disponível
 if (window.shopifyFBConfig) {
     window.initShopifyFBTracking(window.shopifyFBConfig);
-} 
+}

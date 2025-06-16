@@ -1,0 +1,66 @@
+services:
+  - type: web
+    name: pixeltracker
+    env: php
+    region: virginia
+    plan: free
+    buildCommand: |
+      composer install --no-dev --optimize-autoloader
+      php artisan config:cache
+      php artisan route:cache
+      php artisan view:cache
+    startCommand: |
+      php artisan migrate --force
+      php artisan serve --host=0.0.0.0 --port=$PORT
+    envVars:
+      - key: APP_NAME
+        value: PixelTracker
+      - key: APP_ENV
+        value: production
+      - key: APP_DEBUG
+        value: false
+      - key: APP_URL
+        value: https://traqueamentophp.onrender.com
+      - key: LOG_LEVEL
+        value: info
+      - key: SESSION_DRIVER
+        value: database
+      - key: SESSION_DOMAIN
+        value: traqueamentophp.onrender.com
+      - key: SESSION_SECURE_COOKIE
+        value: true
+      - key: CACHE_STORE
+        value: database
+      - key: QUEUE_CONNECTION
+        value: database
+      - key: PORT
+        value: 10000
+      - key: DB_CONNECTION
+        value: pgsql
+      - key: DB_HOST
+        fromDatabase:
+          name: pixeltracker-db
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: pixeltracker-db
+          property: port
+      - key: DB_DATABASE
+        fromDatabase:
+          name: pixeltracker-db
+          property: database
+      - key: DB_USERNAME
+        fromDatabase:
+          name: pixeltracker-db
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: pixeltracker-db
+          property: password
+
+databases:
+  - name: pixeltracker-db
+    databaseName: pixeltracker_postgres
+    user: pixeltracker_postgres_user
+    region: virginia
+    plan: free 
