@@ -38,35 +38,70 @@ class EventsController extends Controller
      */
     private function getRealClientIP($request)
     {
-        // Lista de headers que podem conter o IP real do cliente
+        // Lista de headers que podem conter o IP real do cliente (em ordem de prioridade)
         $headers = [
-            'HTTP_CF_CONNECTING_IP',     // Cloudflare
+            'HTTP_CF_CONNECTING_IP',     // Cloudflare (mais confiável)
+            'HTTP_TRUE_CLIENT_IP',       // Cloudflare Enterprise
+            'HTTP_X_REAL_IP',            // Nginx
             'HTTP_X_FORWARDED_FOR',      // Proxy padrão
             'HTTP_X_FORWARDED',          // Proxy
             'HTTP_X_CLUSTER_CLIENT_IP',  // Cluster
             'HTTP_FORWARDED_FOR',        // Forwarded
             'HTTP_FORWARDED',            // Forwarded
-            'HTTP_X_REAL_IP',            // Nginx
+            'HTTP_CLIENT_IP',            // Proxy
             'REMOTE_ADDR'                // Fallback
         ];
+
+        // Log todos os headers para debug
+        $allHeaders = [];
+        foreach ($headers as $header) {
+            $value = $request->server($header);
+            if (!empty($value)) {
+                $allHeaders[$header] = $value;
+            }
+        }
 
         foreach ($headers as $header) {
             $ip = $request->server($header);
             if (!empty($ip)) {
                 // Se há múltiplos IPs (separados por vírgula), pegar o primeiro
                 if (strpos($ip, ',') !== false) {
-                    $ip = trim(explode(',', $ip)[0]);
-                }
-                
-                // Validar se é um IP válido e não é privado/local
-                if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
-                    return $ip;
+                    $ips = explode(',', $ip);
+                    foreach ($ips as $singleIp) {
+                        $singleIp = trim($singleIp);
+                        // Validar se é um IP válido (IPv4 ou IPv6)
+                        if (filter_var($singleIp, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+                            Log::info('IP Real Encontrado:', [
+                                'header' => $header,
+                                'ip' => $singleIp,
+                                'all_headers' => $allHeaders
+                            ]);
+                            return $singleIp;
+                        }
+                    }
+                } else {
+                    // IP único
+                    $ip = trim($ip);
+                    // Validar se é um IP válido (IPv4 ou IPv6)
+                    if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+                        Log::info('IP Real Encontrado:', [
+                            'header' => $header,
+                            'ip' => $ip,
+                            'all_headers' => $allHeaders
+                        ]);
+                        return $ip;
+                    }
                 }
             }
         }
 
         // Se não encontrou um IP público válido, usar o IP do request como fallback
-        return $request->ip();
+        $fallbackIp = $request->ip();
+        Log::warning('Usando IP Fallback:', [
+            'fallback_ip' => $fallbackIp,
+            'all_headers' => $allHeaders
+        ]);
+        return $fallbackIp;
     }
 
     public function send(Request $request)
@@ -87,16 +122,6 @@ class EventsController extends Controller
             }
             $reader = new Reader($geoipPath);
             $ip = $this->getRealClientIP($request);
-            
-            // Log do IP para debug
-            Log::info('IP Debug:', [
-                'request_ip' => $request->ip(),
-                'real_client_ip' => $ip,
-                'x_forwarded_for' => $request->header('X-Forwarded-For'),
-                'x_real_ip' => $request->header('X-Real-IP'),
-                'cf_connecting_ip' => $request->header('CF-Connecting-IP')
-            ]);
-            
             $record = $reader->city($ip);
             
             // Obter todos os dados com o GeoLite
