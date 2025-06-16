@@ -35,104 +35,57 @@ class EventsController extends Controller
 {
     /**
      * Obter o IP real do cliente considerando proxies/load balancers
+     * Baseado na lógica eficaz: primeiro IP do X-Forwarded-For é sempre o cliente real
      */
     private function getRealClientIP($request)
     {
-        // Lista de headers que podem conter o IP real do cliente (em ordem de prioridade)
+        // PRIORIDADE 1: X-Forwarded-For (cliente real + histórico de proxies)
+        $xForwardedFor = $request->header('X-Forwarded-For');
+        if (!empty($xForwardedFor)) {
+            // Split para separar os IPs e pegar o primeiro (cliente real)
+            $ips = explode(',', $xForwardedFor);
+            $clientIp = trim($ips[0]); // Primeiro IP é sempre o cliente real
+            
+            // Validar se é um IP válido
+            if (filter_var($clientIp, FILTER_VALIDATE_IP)) {
+                Log::info('IP Real do Cliente (X-Forwarded-For):', [
+                    'client_ip' => $clientIp,
+                    'full_header' => $xForwardedFor,
+                    'all_ips' => array_map('trim', $ips)
+                ]);
+                return $clientIp;
+            }
+        }
+
+        // PRIORIDADE 2: Outros headers de proxy
         $headers = [
-            'HTTP_CF_CONNECTING_IP',     // Cloudflare (mais confiável)
-            'HTTP_TRUE_CLIENT_IP',       // Cloudflare Enterprise
-            'HTTP_X_REAL_IP',            // Nginx
-            'HTTP_X_FORWARDED_FOR',      // Proxy padrão
-            'HTTP_X_FORWARDED',          // Proxy
-            'HTTP_X_CLUSTER_CLIENT_IP',  // Cluster
-            'HTTP_FORWARDED_FOR',        // Forwarded
-            'HTTP_FORWARDED',            // Forwarded
-            'HTTP_CLIENT_IP',            // Proxy
-            'REMOTE_ADDR'                // Fallback
+            'CF-Connecting-IP',     // Cloudflare
+            'True-Client-IP',       // Cloudflare Enterprise
+            'X-Real-IP',            // Nginx
+            'X-Client-IP',          // Proxy
+            'X-Forwarded',          // Proxy
+            'Forwarded-For',        // Forwarded
+            'Forwarded'             // Forwarded
         ];
 
-        // Log todos os headers para debug
-        $allHeaders = [];
-        foreach ($headers as $header) {
-            $value = $request->server($header);
-            if (!empty($value)) {
-                $allHeaders[$header] = $value;
-            }
-        }
-
-        foreach ($headers as $header) {
-            $ip = $request->server($header);
+        foreach ($headers as $headerName) {
+            $ip = $request->header($headerName);
             if (!empty($ip)) {
-                // Se há múltiplos IPs (separados por vírgula), pegar o primeiro
-                if (strpos($ip, ',') !== false) {
-                    $ips = explode(',', $ip);
-                    foreach ($ips as $singleIp) {
-                        $singleIp = trim($singleIp);
-                        // Validar se é um IP válido (IPv4 ou IPv6)
-                        if (filter_var($singleIp, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
-                            Log::info('IP Real Encontrado:', [
-                                'header' => $header,
-                                'ip' => $singleIp,
-                                'all_headers' => $allHeaders
-                            ]);
-                            return $singleIp;
-                        }
-                    }
-                } else {
-                    // IP único
-                    $ip = trim($ip);
-                    // Validar se é um IP válido (IPv4 ou IPv6)
-                    if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
-                        Log::info('IP Real Encontrado:', [
-                            'header' => $header,
-                            'ip' => $ip,
-                            'all_headers' => $allHeaders
-                        ]);
-                        return $ip;
-                    }
+                $ip = trim($ip);
+                if (filter_var($ip, FILTER_VALIDATE_IP)) {
+                    Log::info('IP Encontrado em Header Alternativo:', [
+                        'header' => $headerName,
+                        'ip' => $ip
+                    ]);
+                    return $ip;
                 }
             }
         }
 
-        // Se não encontrou um IP público válido, tentar IPs válidos mesmo que sejam de proxy
-        foreach ($headers as $header) {
-            $ip = $request->server($header);
-            if (!empty($ip)) {
-                if (strpos($ip, ',') !== false) {
-                    $ips = explode(',', $ip);
-                    foreach ($ips as $singleIp) {
-                        $singleIp = trim($singleIp);
-                        // Aceitar qualquer IP válido (mesmo de proxy) como fallback
-                        if (filter_var($singleIp, FILTER_VALIDATE_IP)) {
-                            Log::info('IP Proxy Aceito como Fallback:', [
-                                'header' => $header,
-                                'ip' => $singleIp,
-                                'all_headers' => $allHeaders
-                            ]);
-                            return $singleIp;
-                        }
-                    }
-                } else {
-                    $ip = trim($ip);
-                    // Aceitar qualquer IP válido (mesmo de proxy) como fallback
-                    if (filter_var($ip, FILTER_VALIDATE_IP)) {
-                        Log::info('IP Proxy Aceito como Fallback:', [
-                            'header' => $header,
-                            'ip' => $ip,
-                            'all_headers' => $allHeaders
-                        ]);
-                        return $ip;
-                    }
-                }
-            }
-        }
-
-        // Se ainda não encontrou nada, usar o IP do request como último recurso
+        // PRIORIDADE 3: Fallback para request IP
         $fallbackIp = $request->ip();
-        Log::warning('Usando IP Request como Último Recurso:', [
-            'fallback_ip' => $fallbackIp,
-            'all_headers' => $allHeaders
+        Log::warning('Usando IP Request como Fallback:', [
+            'fallback_ip' => $fallbackIp
         ]);
         return $fallbackIp;
     }
