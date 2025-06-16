@@ -20,9 +20,18 @@ mkdir -p /var/www/html/storage/app/geoip
 chmod -R 755 /var/www/html/storage/framework
 chown -R www-data:www-data /var/www/html/storage/framework
 
-# Criar arquivo GeoIP dummy para evitar erro
-echo "dummy" > /var/www/html/storage/app/geoip/GeoLite2-City.mmdb
-chmod 644 /var/www/html/storage/app/geoip/GeoLite2-City.mmdb
+# Verificar se o arquivo GeoIP existe, se não, tentar baixar
+echo "=== VERIFICANDO GEOIP ==="
+if [ ! -f "/var/www/html/storage/app/geoip/GeoLite2-City.mmdb" ]; then
+    echo "Arquivo GeoIP não encontrado, tentando baixar..."
+    if [ ! -z "$MAXMIND_LICENSE_KEY" ] && [ ! -z "$MAXMIND_ACCOUNT_ID" ]; then
+        php artisan geoip:update || echo "⚠️ Falha ao baixar GeoIP - continuando sem geolocalização"
+    else
+        echo "⚠️ Credenciais MaxMind não configuradas - geolocalização desabilitada"
+    fi
+else
+    echo "✅ Arquivo GeoIP encontrado"
+fi
 
 echo "=== LIMPEZA AGRESSIVA DE CACHE ==="
 # Remover arquivos de cache manualmente
