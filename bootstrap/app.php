@@ -18,6 +18,9 @@ return Application::configure(basePath: dirname(__DIR__))
         // Middleware do Sanctum para requisições stateful
         $middleware->append(EnsureFrontendRequestsAreStateful::class);
         
+        // Configurar proxies confiáveis (importante para Render/Cloudflare)
+        $middleware->trustProxies(at: '*');
+        
         $middleware->validateCsrfTokens(except: [
             '/events/send',
             '/webhook/hotmart',
