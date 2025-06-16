@@ -19,6 +19,15 @@ Route::post('/webhook/digital', [DigitalController::class, 'Digital']);
 Route::post('/webhook/shopify', [ShopifyController::class, 'purchase']);
 Route::post('/shopify/add-to-cart', [ShopifyController::class, 'addToCart']);
 
+// Health check simples
+Route::get('/health', function () {
+    return response()->json([
+        'status' => 'ok',
+        'timestamp' => now(),
+        'app_name' => config('app.name', 'NOT SET'),
+    ]);
+});
+
 // Rota de teste para debug
 Route::get('/test-debug', function () {
     Log::info('=== TESTE DE DEBUG ===');
