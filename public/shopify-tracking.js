@@ -1,490 +1,383 @@
 /**
  * Script de Tracking Duplo do Facebook para Shopify
+ * Baseado no padrão otimizado para melhor match quality
  * Integração com API Laravel (server-side) + Pixel Facebook (client-side)
  */
 
-class ShopifyFacebookTracking {
-    constructor(config) {
-        this.apiUrl = config.apiUrl;
-        this.contentId = config.contentId || 'shopify_store';
-        this.pixelId = config.pixelId || '676999668497170';
-        this.external_id = this.generateExternalId();
-        this.userData = {};
-        this.pixelLoaded = false;
-        
-        this.init();
-    }
-
-    init() {
-        // Carregar Pixel do Facebook
-        this.loadFacebookPixel();
-        
-        // Inicializar tracking
-        this.initializeTracking();
-        
-        // Configurar eventos
-        this.setupEvents();
-        
-        // Enviar PageView inicial
-        this.trackPageView();
-    }
-
-    loadFacebookPixel() {
-        // Carregar o Pixel do Facebook se não estiver carregado
-        if (!window.fbq) {
-            !function(f,b,e,v,n,t,s)
-            {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
-            n.callMethod.apply(n,arguments):n.queue.push(arguments)};
-            if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
-            n.queue=[];t=b.createElement(e);t.async=!0;
-            t.src=v;s=b.getElementsByTagName(e)[0];
-            s.parentNode.insertBefore(t,s)}(window, document,'script',
-            'https://connect.facebook.net/en_US/fbevents.js');
-
-            fbq('init', this.pixelId);
-            this.pixelLoaded = true;
-            console.log('Facebook Pixel carregado:', this.pixelId);
+// Função para obter cookies
+function getCookie(name) {
+    const cookies = document.cookie.split(';');
+    for (let cookie of cookies) {
+        const [key, value] = cookie.trim().split('=');
+        if (key === name) {
+            return value;
         }
     }
+    return null;
+}
 
-    generateExternalId() {
-        // Tentar obter external_id de várias fontes
-        const urlParams = new URLSearchParams(window.location.search);
-        let externalId = urlParams.get('external_id') || 
-                        urlParams.get('fbclid') || 
-                        localStorage.getItem('fb_external_id');
-        
-        if (!externalId) {
-            externalId = 'shopify_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-            localStorage.setItem('fb_external_id', externalId);
+// Função para gerar UUID
+function generateUUID() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        const r = Math.random() * 16 | 0,
+              v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
+}
+
+// Função principal para enviar eventos
+async function sendEvent(eventType, data = {}) {
+    const contentId = window.shopifyFBConfig?.contentId || 'shopify_store';
+    const apiUrl = window.shopifyFBConfig?.apiUrl || 'https://traqueamentophp.onrender.com';
+    const event_source_url = window.location.href;
+    const _fbc = getCookie('_fbc') || '';
+    const _fbp = getCookie('_fbp') || '';
+    const userId = getCookie('userId') || '';
+    let fn = getCookie("fn");
+    let ln = getCookie("ln");
+    let em = getCookie("em");
+    let ph = getCookie("ph");
+
+    // Coleta automática de dados de formulários para eventos específicos
+    if (eventType === "Lead" || eventType === "InitiateCheckout") {
+        // Detectar formulários Shopify automaticamente
+        const nameField = document.querySelector('[name="contact[first_name]"], [name="customer[first_name]"], [name="first_name"], [name="nome"], [name="NOME"]');
+        const lastNameField = document.querySelector('[name="contact[last_name]"], [name="customer[last_name]"], [name="last_name"], [name="sobrenome"], [name="SOBRENOME"]');
+        const emailField = document.querySelector('[name="contact[email]"], [name="customer[email]"], [name="email"], [name="EMAIL"]');
+        const phoneField = document.querySelector('[name="contact[phone]"], [name="customer[phone]"], [name="phone"], [name="telefone"], [name="TELEFONE"]');
+
+        if (nameField && nameField.value) {
+            fn = nameField.value.trim().toLowerCase();
         }
         
-        return externalId;
-    }
-
-    async initializeTracking() {
-        try {
-            // Coletar dados do usuário
-            this.userData = {
-                external_id: this.external_id,
-                _fbc: this.getFbc(),
-                _fbp: this.getFbp(),
-                event_source_url: window.location.href,
-                user_agent: navigator.userAgent,
-                ip_address: await this.getClientIP()
-            };
-
-            // Enviar evento de inicialização para obter dados processados
-            const response = await fetch(`${this.apiUrl}/events/send`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest'
-                },
-                body: JSON.stringify({
-                    eventType: 'Init',
-                    contentId: this.contentId,
-                    ...this.userData
-                })
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                // Atualizar dados com informações processadas pela API
-                this.userData = { ...this.userData, ...data };
-                console.log('Shopify FB Tracking inicializado:', data);
+        if (lastNameField && lastNameField.value) {
+            ln = lastNameField.value.trim().toLowerCase();
+        } else if (nameField && nameField.value) {
+            // Se não há campo de sobrenome, dividir o nome completo
+            const nameParts = nameField.value.trim().split(' ');
+            fn = nameParts[0].toLowerCase();
+            if (nameParts.length > 1) {
+                ln = nameParts[nameParts.length - 1].toLowerCase();
             }
-        } catch (error) {
-            console.error('Erro ao inicializar tracking:', error);
-        }
-    }
-
-    setupEvents() {
-        // Event listener para adicionar ao carrinho
-        document.addEventListener('click', (e) => {
-            const button = e.target.closest('[name="add"], .btn-product-form, .product-form__cart-submit, .product-form__buttons button[type="submit"]');
-            if (button) {
-                this.trackAddToCart();
-            }
-        });
-
-        // Event listener para iniciar checkout
-        document.addEventListener('click', (e) => {
-            const checkoutButton = e.target.closest('.cart__checkout-button, [name="goto_checkout"], .btn--checkout, [href*="checkout"]');
-            if (checkoutButton) {
-                this.trackInitiateCheckout();
-            }
-        });
-
-        // Event listener para formulários de lead
-        document.addEventListener('submit', (e) => {
-            const form = e.target;
-            if (form.matches('.contact-form, .newsletter-form, form[action*="contact"]')) {
-                this.trackLead();
-            }
-        });
-
-        // Detectar página de produto para ViewContent
-        if (window.location.pathname.includes('/products/')) {
-            setTimeout(() => this.trackViewContent(), 1000);
         }
 
-        // Tracking de scroll
-        this.setupScrollTracking();
+        if (emailField && emailField.value) {
+            em = emailField.value.trim().toLowerCase();
+        }
 
-        // Tracking de tempo na página
-        this.setupTimeTracking();
+        if (phoneField && phoneField.value) {
+            ph = phoneField.value.replace(/\s|-|\(|\)/g, '');
+            // Adicionar código do país se não tiver
+            if (ph && !ph.startsWith('55')) {
+                ph = '55' + ph;
+            }
+        }
 
-        // Tracking de vídeos
-        this.setupVideoTracking();
+        // Armazenar os dados nos cookies
+        const date = new Date();
+        date.setFullYear(date.getFullYear() + 1); // Expira em 1 ano
+        if (fn) document.cookie = `fn=${encodeURIComponent(fn)}; expires=${date.toUTCString()}; path=/`;
+        if (ln) document.cookie = `ln=${encodeURIComponent(ln)}; expires=${date.toUTCString()}; path=/`;
+        if (em) document.cookie = `em=${em}; expires=${date.toUTCString()}; path=/`;
+        if (ph) document.cookie = `ph=${encodeURIComponent(ph)}; expires=${date.toUTCString()}; path=/`;
     }
 
-    setupScrollTracking() {
-        let scrollTracker = {
-            25: false,
-            50: false,
-            75: false,
-            90: false
+    try {
+        // Preparar payload para API
+        const payload = { 
+            contentId, 
+            eventType, 
+            event_source_url, 
+            _fbc, 
+            _fbp, 
+            userId,
+            ...data
         };
-
-        window.addEventListener('scroll', () => {
-            const scrollPercent = (window.scrollY / (document.documentElement.scrollHeight - window.innerHeight)) * 100;
-            
-            Object.keys(scrollTracker).forEach(threshold => {
-                if (scrollPercent >= threshold && !scrollTracker[threshold]) {
-                    scrollTracker[threshold] = true;
-                    this.sendDualEvent(`Scroll_${threshold}`);
-                }
-            });
-        });
-    }
-
-    setupTimeTracking() {
-        setTimeout(() => {
-            this.sendDualEvent('Timer_1min');
-        }, 60000); // 1 minuto
-    }
-
-    setupVideoTracking() {
-        document.addEventListener('DOMContentLoaded', () => {
-            const videos = document.querySelectorAll('video');
-            videos.forEach(video => {
-                let videoEvents = {
-                    25: false,
-                    50: false,
-                    75: false,
-                    90: false
-                };
-                
-                video.addEventListener('play', () => {
-                    this.sendDualEvent('PlayVideo');
-                });
-                
-                video.addEventListener('timeupdate', () => {
-                    const percent = Math.round((video.currentTime / video.duration) * 100);
-                    
-                    Object.keys(videoEvents).forEach(threshold => {
-                        if (percent >= parseInt(threshold) && !videoEvents[threshold]) {
-                            videoEvents[threshold] = true;
-                            this.sendDualEvent(`ViewVideo_${threshold}`);
-                        }
-                    });
-                });
-            });
-        });
-    }
-
-    async trackPageView() {
-        await this.sendDualEvent('PageView');
-    }
-
-    async trackViewContent() {
-        const productData = this.getProductData();
-        await this.sendDualEvent('ViewContent', productData);
-    }
-
-    async trackAddToCart() {
-        const productData = this.getProductData();
         
-        // Enviar para API personalizada
-        try {
-            const response = await fetch(`${this.apiUrl}/shopify/add-to-cart`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest'
-                },
-                body: JSON.stringify({
-                    external_id: this.external_id,
-                    product_id: productData.content_ids?.[0] || this.getProductId(),
-                    _fbc: this.userData._fbc,
-                    _fbp: this.userData._fbp,
-                    event_source_url: window.location.href
-                })
-            });
+        // Adicionar dados pessoais se disponíveis
+        if (fn) payload.fn = fn;
+        if (ln) payload.ln = ln;
+        if (em) payload.em = em;
+        if (ph) payload.ph = ph;
 
-            if (response.ok) {
-                console.log('AddToCart enviado para API com sucesso');
-            }
-        } catch (error) {
-            console.error('Erro ao enviar AddToCart para API:', error);
-        }
-
-        // Enviar para Pixel do Facebook
-        this.sendPixelEvent('AddToCart', productData);
-    }
-
-    async trackInitiateCheckout() {
-        await this.sendDualEvent('InitiateCheckout');
-    }
-
-    async trackLead() {
-        await this.sendDualEvent('Lead');
-    }
-
-    async trackPurchase(purchaseData) {
-        await this.sendDualEvent('Purchase', purchaseData);
-    }
-
-    // Método principal para envio duplo (API + Pixel)
-    async sendDualEvent(eventType, customData = {}) {
         // Enviar para API (server-side)
-        await this.sendServerEvent(eventType, customData);
-        
-        // Enviar para Pixel (client-side)
-        this.sendPixelEvent(eventType, customData);
-    }
+        const response = await fetch(`${apiUrl}/events/send`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: JSON.stringify(payload)
+        });
 
-    // Envio para API (server-side)
-    async sendServerEvent(eventType, customData = {}) {
-        try {
-            const eventData = {
-                eventType: eventType,
-                contentId: this.contentId,
-                event_source_url: window.location.href,
-                ...this.userData,
-                ...customData
-            };
+        const responseData = await response.json();
+        console.log(`✅ Evento ${eventType} enviado para API (server-side)`);
 
-            const response = await fetch(`${this.apiUrl}/events/send`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest'
-                },
-                body: JSON.stringify(eventData)
-            });
+        // Se for evento Init, apenas retornar os dados
+        if (eventType === "Init") {
+            return responseData;
+        }
 
-            if (response.ok) {
-                console.log(`✅ Evento ${eventType} enviado para API (server-side)`);
+        // Enviar para Facebook Pixel (client-side) com eventID compartilhado
+        if (typeof fbq !== 'undefined' && responseData.eventID) {
+            const customEvents = ['Scroll_25', 'Scroll_50', 'Scroll_75', 'Scroll_90', 'Timer_1min', 'PlayVideo', 'ViewVideo_25', 'ViewVideo_50', 'ViewVideo_75', 'ViewVideo_90'];
+            
+            // Preparar dados para o pixel
+            const pixelData = {};
+            if (data.content_ids) pixelData.content_ids = data.content_ids;
+            if (data.value) pixelData.value = data.value;
+            if (data.currency) pixelData.currency = data.currency;
+            
+            // Adicionar content_ids padrão se não fornecido
+            if (!pixelData.content_ids) {
+                pixelData.content_ids = [contentId];
             }
-        } catch (error) {
-            console.error(`❌ Erro ao enviar evento ${eventType} para API:`, error);
-        }
-    }
 
-    // Envio para Pixel do Facebook (client-side)
-    sendPixelEvent(eventType, customData = {}) {
-        if (typeof fbq !== 'undefined') {
-            try {
-                // Mapear eventos customizados para eventos padrão do Facebook
-                const eventMapping = {
-                    'PageView': 'PageView',
-                    'ViewContent': 'ViewContent',
-                    'AddToCart': 'AddToCart',
-                    'InitiateCheckout': 'InitiateCheckout',
-                    'Purchase': 'Purchase',
-                    'Lead': 'Lead',
-                    'Scroll_25': 'Scroll_25',
-                    'Scroll_50': 'Scroll_50',
-                    'Scroll_75': 'Scroll_75',
-                    'Scroll_90': 'Scroll_90',
-                    'Timer_1min': 'Timer_1min',
-                    'PlayVideo': 'PlayVideo',
-                    'ViewVideo_25': 'ViewVideo_25',
-                    'ViewVideo_50': 'ViewVideo_50',
-                    'ViewVideo_75': 'ViewVideo_75',
-                    'ViewVideo_90': 'ViewVideo_90'
-                };
-
-                const fbEventName = eventMapping[eventType] || eventType;
-                
-                // Preparar dados para o pixel
-                const pixelData = this.preparePixelData(customData);
-                
-                if (['PageView', 'ViewContent', 'AddToCart', 'InitiateCheckout', 'Purchase', 'Lead'].includes(fbEventName)) {
-                    // Eventos padrão do Facebook
-                    fbq('track', fbEventName, pixelData);
-                } else {
-                    // Eventos customizados
-                    fbq('trackCustom', fbEventName, pixelData);
-                }
-                
-                console.log(`✅ Evento ${eventType} enviado para Pixel (client-side)`);
-            } catch (error) {
-                console.error(`❌ Erro ao enviar evento ${eventType} para Pixel:`, error);
+            if (customEvents.includes(eventType)) {
+                fbq('trackCustom', eventType, pixelData, { eventID: responseData.eventID });
+            } else {
+                fbq('track', eventType, pixelData, { eventID: responseData.eventID });
             }
-        } else {
-            console.warn('Facebook Pixel não carregado');
-        }
-    }
-
-    preparePixelData(customData) {
-        const pixelData = {};
-        
-        // Adicionar dados de produto se disponível
-        if (customData.content_ids) {
-            pixelData.content_ids = customData.content_ids;
-        }
-        
-        if (customData.value) {
-            pixelData.value = customData.value;
-        }
-        
-        if (customData.currency) {
-            pixelData.currency = customData.currency;
-        }
-        
-        // Adicionar external_id para melhor matching
-        if (this.external_id) {
-            pixelData.external_id = this.external_id;
-        }
-        
-        return pixelData;
-    }
-
-    getProductData() {
-        const productData = {};
-        
-        // Tentar obter dados do produto
-        const productId = this.getProductId();
-        if (productId) {
-            productData.content_ids = [productId];
-        }
-        
-        // Tentar obter preço
-        const priceElement = document.querySelector('.price, .product-price, [data-price]');
-        if (priceElement) {
-            const priceText = priceElement.textContent || priceElement.dataset.price;
-            const price = parseFloat(priceText.replace(/[^\d.,]/g, '').replace(',', '.'));
-            if (!isNaN(price)) {
-                productData.value = price;
-                productData.currency = 'BRL';
-            }
-        }
-        
-        return productData;
-    }
-
-    getProductId() {
-        // Tentar extrair ID do produto de várias fontes
-        const productForm = document.querySelector('form[action*="/cart/add"]');
-        if (productForm) {
-            const variantInput = productForm.querySelector('[name="id"]');
-            if (variantInput) {
-                return variantInput.value;
-            }
+            
+            console.log(`✅ Evento ${eventType} enviado para Pixel (client-side) com eventID: ${responseData.eventID}`);
         }
 
-        // Tentar extrair do meta
-        const productMeta = document.querySelector('meta[property="product:retailer_item_id"]');
-        if (productMeta) {
-            return productMeta.content;
-        }
-
-        // Tentar extrair da URL
-        const pathMatch = window.location.pathname.match(/\/products\/([^\/]+)/);
-        if (pathMatch) {
-            return pathMatch[1];
-        }
-
-        return 'unknown';
-    }
-
-    getFbc() {
-        return this.getCookie('_fbc') || null;
-    }
-
-    getFbp() {
-        return this.getCookie('_fbp') || null;
-    }
-
-    getCookie(name) {
-        const value = `; ${document.cookie}`;
-        const parts = value.split(`; ${name}=`);
-        if (parts.length === 2) return parts.pop().split(';').shift();
-        return null;
-    }
-
-    async getClientIP() {
-        try {
-            const response = await fetch('https://api.ipify.org?format=json');
-            const data = await response.json();
-            return data.ip;
-        } catch (error) {
-            return null;
-        }
-    }
-
-    // Método para coletar dados do usuário no checkout
-    collectCheckoutData(customerData) {
-        if (customerData.email) {
-            this.userData.em = customerData.email.toLowerCase();
-        }
-        if (customerData.firstName) {
-            this.userData.fn = customerData.firstName.toLowerCase();
-        }
-        if (customerData.lastName) {
-            this.userData.ln = customerData.lastName.toLowerCase();
-        }
-        if (customerData.phone) {
-            this.userData.ph = customerData.phone.replace(/\D/g, '');
-        }
-
-        // Salvar no localStorage para usar nos webhooks
-        localStorage.setItem('fb_user_data', JSON.stringify(this.userData));
-    }
-
-    // Método público para tracking manual de Purchase
-    trackManualPurchase(orderData) {
-        const purchaseData = {
-            value: orderData.total_price,
-            currency: orderData.currency || 'BRL',
-            content_ids: orderData.line_items?.map(item => item.variant_id) || [],
-            order_id: orderData.order_id
-        };
-        
-        this.trackPurchase(purchaseData);
+        return responseData;
+    } catch (error) {
+        console.error(`❌ Erro ao rastrear evento ${eventType}:`, error);
     }
 }
 
-// Função para inicializar o tracking
-window.initShopifyFBTracking = function(config) {
-    if (!config.apiUrl) {
-        console.error('API URL é obrigatória para o tracking do Facebook');
-        return;
+// Função para inicializar o pixel
+async function initPixel() {
+    let userId = getCookie("userId");
+    let fn = getCookie("fn");
+    let ln = getCookie("ln");
+    let em = getCookie("em");
+    let ph = getCookie("ph");
+
+    // Gerar userId se não existir
+    if (!userId) {
+        userId = generateUUID();
+        const date = new Date();
+        date.setFullYear(date.getFullYear() + 1);
+        document.cookie = `userId=${userId}; expires=${date.toUTCString()}; path=/`;
     }
-    
-    window.shopifyFBTracking = new ShopifyFacebookTracking(config);
-    
-    // Adicionar external_id como atributo customizado nos formulários
-    const forms = document.querySelectorAll('form[action*="/cart/add"]');
-    forms.forEach(form => {
-        if (!form.querySelector('[name="properties[_external_id]"]')) {
-            const input = document.createElement('input');
-            input.type = 'hidden';
-            input.name = 'properties[_external_id]';
-            input.value = window.shopifyFBTracking.external_id;
-            form.appendChild(input);
+
+    // Obter dados de inicialização da API
+    const init = await sendEvent('Init') || {};
+
+    // Preparar dados do usuário para o Facebook Pixel
+    let userData = {
+        "ct": init.ct || '',
+        "st": init.st || '',
+        "zp": init.zp || '',
+        "country": init.country || '',
+        "client_ip_address": init.client_ip_address || '',
+        "client_user_agent": init.client_user_agent || '',
+        "fbc": init.fbc || '',
+        "fbp": init.fbp || '',
+        "external_id": userId || ''
+    };
+
+    // Adicionar dados pessoais se disponíveis
+    if (fn) userData.fn = fn;
+    if (ln) userData.ln = ln;
+    if (em) userData.em = em;
+    if (ph) userData.ph = ph;
+
+    // Inicializar o Facebook Pixel com os dados
+    const pixelId = window.shopifyFBConfig?.pixelId || '676999668497170';
+    fbq('init', pixelId, userData);
+    console.log('🚀 Facebook Pixel inicializado com dados:', userData);
+
+    // Enviar PageView inicial
+    sendEvent('PageView');
+}
+
+// Inicialização do Facebook Pixel
+!function(f,b,e,v,n,t,s) {
+    if(f.fbq) return;
+    n=f.fbq=function(){n.callMethod ?
+    n.callMethod.apply(n,arguments) : n.queue.push(arguments)};
+    if(!f._fbq) f._fbq = n;
+    n.push=n;
+    n.loaded = !0;
+    n.version='2.0';
+    n.queue = [];
+    t=b.createElement(e); 
+    t.async = !0;
+    t.src = v;
+    s=b.getElementsByTagName(e)[0];
+    s.parentNode.insertBefore(t,s)
+}(window, document, 'script', 'https://connect.facebook.net/en_US/fbevents.js');
+
+// Configurar eventos automáticos do Shopify
+function setupShopifyEvents() {
+    // Detectar AddToCart
+    document.addEventListener('click', (e) => {
+        const button = e.target.closest('[name="add"], .btn-product-form, .product-form__cart-submit, .product-form__buttons button[type="submit"]');
+        if (button) {
+            setTimeout(() => {
+                const productData = getShopifyProductData();
+                sendEvent('AddToCart', productData);
+            }, 100);
         }
     });
+
+    // Detectar InitiateCheckout
+    document.addEventListener('click', (e) => {
+        const checkoutButton = e.target.closest('.cart__checkout-button, [name="goto_checkout"], .btn--checkout, [href*="checkout"]');
+        if (checkoutButton) {
+            sendEvent('InitiateCheckout');
+        }
+    });
+
+    // Detectar formulários de contato/newsletter (Lead)
+    document.addEventListener('submit', (e) => {
+        const form = e.target;
+        if (form.matches('.contact-form, .newsletter-form, form[action*="contact"], form[action*="newsletter"]')) {
+            setTimeout(() => sendEvent('Lead'), 100);
+        }
+    });
+
+    // ViewContent para páginas de produto
+    if (window.location.pathname.includes('/products/')) {
+        setTimeout(() => {
+            const productData = getShopifyProductData();
+            sendEvent('ViewContent', productData);
+        }, 1000);
+    }
+
+    // Tracking de scroll
+    setupScrollTracking();
+
+    // Tracking de tempo
+    setupTimeTracking();
+
+    // Tracking de vídeos
+    setupVideoTracking();
+}
+
+// Função para obter dados do produto Shopify
+function getShopifyProductData() {
+    const productData = {};
     
-    console.log('🚀 Shopify Facebook Tracking Duplo inicializado!');
-    console.log('📊 Server-side: API Laravel');
-    console.log('🌐 Client-side: Facebook Pixel');
+    // Tentar obter ID do produto
+    const productForm = document.querySelector('form[action*="/cart/add"]');
+    if (productForm) {
+        const variantInput = productForm.querySelector('[name="id"]');
+        if (variantInput) {
+            productData.content_ids = [variantInput.value];
+        }
+    }
+
+    // Tentar obter preço
+    const priceElement = document.querySelector('.price, .product-price, [data-price], .money');
+    if (priceElement) {
+        const priceText = priceElement.textContent || priceElement.dataset.price;
+        const price = parseFloat(priceText.replace(/[^\d.,]/g, '').replace(',', '.'));
+        if (!isNaN(price)) {
+            productData.value = price;
+            productData.currency = 'BRL';
+        }
+    }
+
+    return productData;
+}
+
+// Configurar tracking de scroll
+function setupScrollTracking() {
+    let scrollTracker = {
+        25: false,
+        50: false,
+        75: false,
+        90: false
+    };
+
+    window.addEventListener('scroll', () => {
+        const scrollPercent = (window.scrollY / (document.documentElement.scrollHeight - window.innerHeight)) * 100;
+        
+        Object.keys(scrollTracker).forEach(threshold => {
+            if (scrollPercent >= threshold && !scrollTracker[threshold]) {
+                scrollTracker[threshold] = true;
+                sendEvent(`Scroll_${threshold}`);
+            }
+        });
+    });
+}
+
+// Configurar tracking de tempo
+function setupTimeTracking() {
+    setTimeout(() => {
+        sendEvent('Timer_1min');
+    }, 60000); // 1 minuto
+}
+
+// Configurar tracking de vídeos
+function setupVideoTracking() {
+    document.addEventListener('DOMContentLoaded', () => {
+        const videos = document.querySelectorAll('video');
+        videos.forEach(video => {
+            let videoEvents = {
+                25: false,
+                50: false,
+                75: false,
+                90: false
+            };
+            
+            video.addEventListener('play', () => {
+                sendEvent('PlayVideo');
+            });
+            
+            video.addEventListener('timeupdate', () => {
+                const percent = Math.round((video.currentTime / video.duration) * 100);
+                
+                Object.keys(videoEvents).forEach(threshold => {
+                    if (percent >= parseInt(threshold) && !videoEvents[threshold]) {
+                        videoEvents[threshold] = true;
+                        sendEvent(`ViewVideo_${threshold}`);
+                    }
+                });
+            });
+        });
+    });
+}
+
+// Função pública para tracking manual de Purchase
+window.trackShopifyPurchase = function(orderData) {
+    const purchaseData = {
+        value: orderData.total_price,
+        currency: orderData.currency || 'BRL',
+        content_ids: orderData.line_items?.map(item => item.variant_id) || [],
+        order_id: orderData.order_id
+    };
+    
+    sendEvent('Purchase', purchaseData);
 };
 
-// Auto-inicializar se configuração estiver disponível
-if (window.shopifyFBConfig) {
-    window.initShopifyFBTracking(window.shopifyFBConfig);
-} 
+// Inicialização automática
+document.addEventListener('DOMContentLoaded', () => {
+    // Verificar se a configuração está disponível
+    if (window.shopifyFBConfig) {
+        console.log('🚀 Iniciando Shopify Facebook Tracking Duplo...');
+        
+        // Inicializar pixel
+        initPixel();
+        
+        // Configurar eventos
+        setupShopifyEvents();
+        
+        console.log('✅ Shopify Facebook Tracking Duplo inicializado!');
+        console.log('📊 Server-side: API Laravel');
+        console.log('🌐 Client-side: Facebook Pixel');
+        console.log('🎯 Match Quality: Otimizado com dados pessoais');
+    } else {
+        console.warn('⚠️ shopifyFBConfig não encontrado. Configure window.shopifyFBConfig antes de carregar este script.');
+    }
+});
+
+// Expor funções globalmente para uso manual
+window.sendEvent = sendEvent;
+window.initPixel = initPixel;
