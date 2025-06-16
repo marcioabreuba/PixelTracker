@@ -45,6 +45,27 @@ Route::get('/test-config', function () {
     ]);
 });
 
+// Rota super simples - só para testar se Laravel funciona
+Route::get('/simple', function () {
+    return response()->json(['status' => 'LARAVEL_WORKING', 'time' => now()]);
+});
+
+// Rota para testar variáveis de ambiente
+Route::get('/env-test', function () {
+    return response()->json([
+        'app_key_set' => !empty(config('app.key')),
+        'app_env' => config('app.env'),
+        'db_connection' => config('database.default'),
+        'all_env_vars' => [
+            'APP_KEY' => env('APP_KEY') ? 'SET' : 'NOT_SET',
+            'APP_ENV' => env('APP_ENV', 'NOT_SET'),
+            'DB_CONNECTION' => env('DB_CONNECTION', 'NOT_SET'),
+            'DB_HOST' => env('DB_HOST', 'NOT_SET'),
+            'DB_DATABASE' => env('DB_DATABASE', 'NOT_SET'),
+        ]
+    ]);
+});
+
 Route::middleware(['auth:sanctum'])->group(function () {
 });
 

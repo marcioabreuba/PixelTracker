@@ -1,30 +1,25 @@
 #!/bin/bash
 
-# Set default port if not provided
-export PORT=${PORT:-80}
+echo "=== INICIANDO APLICAÇÃO ==="
+echo "PORT: $PORT"
+echo "APP_ENV: $APP_ENV"
+echo "APP_KEY exists: $([ -n "$APP_KEY" ] && echo "YES" || echo "NO")"
 
-# Wait for database to be ready
-echo "Waiting for database..."
-sleep 10
+# Aguardar um pouco para garantir que tudo esteja pronto
+sleep 2
 
-# Configure Apache to listen on the correct port
-echo "Configuring Apache for port $PORT..."
-echo "Listen $PORT" > /etc/apache2/ports.conf
-echo "ServerName localhost:$PORT" >> /etc/apache2/apache2.conf
+echo "=== LIMPANDO CACHE ==="
+# Limpar todos os caches possíveis
+php artisan config:clear || echo "Config clear failed"
+php artisan cache:clear || echo "Cache clear failed"
+php artisan route:clear || echo "Route clear failed"
+php artisan view:clear || echo "View clear failed"
 
-# Update VirtualHost configuration with actual port
-sed -i "s/\${PORT}/$PORT/g" /etc/apache2/sites-available/000-default.conf
+echo "=== CONFIGURANDO APACHE ==="
+# Configurar Apache para usar a porta do Render
+sed -i "s/Listen 80/Listen $PORT/" /etc/apache2/ports.conf
+sed -i "s/:80/:$PORT/" /etc/apache2/sites-available/000-default.conf
 
-# Run Laravel commands
-echo "Running Laravel setup..."
-php artisan config:cache
-php artisan route:cache
-php artisan view:cache
-
-# Run migrations
-echo "Running migrations..."
-php artisan migrate --force
-
-# Start Apache
-echo "Starting Apache on port $PORT..."
+echo "=== INICIANDO APACHE ==="
+# Iniciar Apache em foreground
 apache2-foreground 
