@@ -8,6 +8,12 @@ echo "APP_KEY exists: $([ -n "$APP_KEY" ] && echo "YES" || echo "NO")"
 # Aguardar um pouco para garantir que tudo esteja pronto
 sleep 2
 
+echo "=== CRIANDO DIRETÓRIOS NECESSÁRIOS ==="
+# Criar diretório de sessões se não existir
+mkdir -p /var/www/html/storage/framework/sessions
+chmod -R 755 /var/www/html/storage/framework/sessions
+chown -R www-data:www-data /var/www/html/storage/framework/sessions
+
 echo "=== LIMPANDO CACHE ==="
 # Limpar todos os caches possíveis
 php artisan config:clear || echo "Config clear failed"
