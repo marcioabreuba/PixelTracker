@@ -32,10 +32,9 @@ RUN chown -R www-data:www-data /var/www/html \
 
 # Configure Apache
 RUN a2enmod rewrite
-COPY .docker/apache.conf /etc/apache2/sites-available/000-default.conf
 
-# Create Apache config if not exists
-RUN mkdir -p .docker && echo '<VirtualHost *:80>\n\
+# Create Apache configuration directly
+RUN echo '<VirtualHost *:80>\n\
     DocumentRoot /var/www/html/public\n\
     <Directory /var/www/html/public>\n\
         AllowOverride All\n\
@@ -43,10 +42,7 @@ RUN mkdir -p .docker && echo '<VirtualHost *:80>\n\
     </Directory>\n\
     ErrorLog ${APACHE_LOG_DIR}/error.log\n\
     CustomLog ${APACHE_LOG_DIR}/access.log combined\n\
-</VirtualHost>' > .docker/apache.conf
-
-# Copy Apache config
-COPY .docker/apache.conf /etc/apache2/sites-available/000-default.conf
+</VirtualHost>' > /etc/apache2/sites-available/000-default.conf
 
 # Expose port
 EXPOSE 80
