@@ -83,35 +83,19 @@ async function sendEvent(eventType, data = {}) {
     }
 
     try {
-        // Preparar parâmetros otimizados para ambos (API e Pixel)
+        // Obter dados do produto/página atual para todos os eventos
+        const currentPageData = getCurrentPageData();
+        
+        // Preparar parâmetros otimizados para ambos (API e Pixel) - TODOS OS EVENTOS
         const optimizedParams = {
             app: 'Pixel Tracker',
             language: 'pt-BR',
-            referrer_url: document.referrer || ''
+            referrer_url: document.referrer || '',
+            content_type: currentPageData.content_type,
+            content_category: currentPageData.content_category,
+            content_name: currentPageData.content_name,
+            num_items: currentPageData.num_items
         };
-
-        // Adicionar parâmetros específicos por tipo de evento
-        if (eventType === 'ViewContent' || eventType === 'AddToCart') {
-            optimizedParams.content_type = 'product';
-            optimizedParams.content_category = getProductCategory();
-            optimizedParams.content_name = getProductName();
-            optimizedParams.num_items = 1;
-        } else if (eventType === 'PageView') {
-            optimizedParams.content_type = getPageType();
-            optimizedParams.content_category = getPageCategory();
-            optimizedParams.content_name = getPageName();
-            optimizedParams.num_items = 1;
-        } else if (eventType === 'InitiateCheckout') {
-            optimizedParams.content_type = 'checkout';
-            optimizedParams.content_category = ['Checkout'];
-            optimizedParams.content_name = ['Checkout Process'];
-            optimizedParams.num_items = getCartItemsCount();
-        } else if (eventType === 'Lead') {
-            optimizedParams.content_type = 'lead_form';
-            optimizedParams.content_category = ['Lead Generation'];
-            optimizedParams.content_name = ['Contact Form'];
-            optimizedParams.num_items = 1;
-        }
 
         // Preparar payload para API (incluindo parâmetros otimizados)
         const payload = { 
@@ -164,9 +148,15 @@ async function sendEvent(eventType, data = {}) {
             if (data.value) pixelData.value = data.value;
             if (data.currency) pixelData.currency = data.currency;
             
-            // Adicionar content_ids padrão se não fornecido
+            // OTIMIZAÇÃO PARA CATÁLOGO: Usar IDs reais dos produtos
             if (!pixelData.content_ids) {
-                pixelData.content_ids = [contentId];
+                // Tentar obter content_ids reais dos produtos
+                const realProductIds = getRealProductIds();
+                if (realProductIds.length > 0) {
+                    pixelData.content_ids = realProductIds;
+                } else {
+                    pixelData.content_ids = [contentId]; // Fallback
+                }
             }
 
             if (customEvents.includes(eventType)) {
@@ -176,6 +166,7 @@ async function sendEvent(eventType, data = {}) {
             }
             
             console.log(`✅ Evento ${eventType} enviado para Pixel (client-side) com eventID: ${responseData.eventID}`);
+            console.log(`📦 Content IDs: ${JSON.stringify(pixelData.content_ids)}`);
         }
 
         return responseData;
@@ -320,6 +311,97 @@ function getShopifyProductData() {
     }
 
     return productData;
+}
+
+// Função para obter dados da página atual (para todos os eventos)
+function getCurrentPageData() {
+    const pageType = getPageType();
+    
+    if (pageType === 'product') {
+        return {
+            content_type: 'product',
+            content_category: getProductCategory(),
+            content_name: getProductName(),
+            num_items: 1
+        };
+    } else if (pageType === 'checkout') {
+        return {
+            content_type: 'checkout',
+            content_category: ['Checkout'],
+            content_name: ['Checkout Process'],
+            num_items: getCartItemsCount()
+        };
+    } else if (pageType === 'cart') {
+        return {
+            content_type: 'cart',
+            content_category: ['Cart'],
+            content_name: ['Shopping Cart'],
+            num_items: getCartItemsCount()
+        };
+    } else {
+        return {
+            content_type: pageType,
+            content_category: getPageCategory(),
+            content_name: getPageName(),
+            num_items: 1
+        };
+    }
+}
+
+// Função para obter IDs reais dos produtos (otimização para catálogo)
+function getRealProductIds() {
+    const productIds = [];
+    
+    // 1. Tentar obter de página de produto
+    if (window.location.pathname.includes('/products/')) {
+        const productForm = document.querySelector('form[action*="/cart/add"]');
+        if (productForm) {
+            const variantInput = productForm.querySelector('[name="id"]');
+            if (variantInput && variantInput.value) {
+                productIds.push(variantInput.value);
+            }
+        }
+        
+        // Tentar extrair product ID da URL também
+        const pathMatch = window.location.pathname.match(/\/products\/([^\/\?]+)/);
+        if (pathMatch && pathMatch[1]) {
+            productIds.push(pathMatch[1]);
+        }
+    }
+    
+    // 2. Tentar obter de carrinho
+    const cartItems = document.querySelectorAll('[data-variant-id], [data-product-id]');
+    cartItems.forEach(item => {
+        const variantId = item.dataset.variantId;
+        const productId = item.dataset.productId;
+        if (variantId) productIds.push(variantId);
+        if (productId) productIds.push(productId);
+    });
+    
+    // 3. Tentar obter de meta tags
+    const productMeta = document.querySelector('meta[property="product:retailer_item_id"]');
+    if (productMeta && productMeta.content) {
+        productIds.push(productMeta.content);
+    }
+    
+    // 4. Tentar obter de dados estruturados JSON-LD
+    const jsonLdScripts = document.querySelectorAll('script[type="application/ld+json"]');
+    jsonLdScripts.forEach(script => {
+        try {
+            const data = JSON.parse(script.textContent);
+            if (data['@type'] === 'Product' && data.sku) {
+                productIds.push(data.sku);
+            }
+            if (data['@type'] === 'Product' && data.productID) {
+                productIds.push(data.productID);
+            }
+        } catch (e) {
+            // Ignorar erros de parsing
+        }
+    });
+    
+    // Remover duplicatas e valores vazios
+    return [...new Set(productIds.filter(id => id && id.trim() !== ''))];
 }
 
 // Funções auxiliares para parâmetros otimizados
