@@ -176,6 +176,22 @@ async function sendEvent(eventType, data = {}) {
         // Obter dados do produto/página atual para todos os eventos
         const currentPageData = getCurrentPageData();
         
+        // DETERMINAR CONTENT_IDS CORRETOS
+        let finalContentIds = data.content_ids || [];
+        
+        // Se não há content_ids específicos, usar getRealProductIds
+        if (!finalContentIds || finalContentIds.length === 0) {
+            const realProductIds = getRealProductIds();
+            if (realProductIds.length > 0) {
+                finalContentIds = realProductIds;
+                TrackingUtils.log(`Content IDs via getRealProductIds para ${eventType}`, realProductIds);
+            } else {
+                finalContentIds = [contentId]; // Fallback para contentId do domínio
+            }
+        } else {
+            TrackingUtils.log(`Content IDs específicos para ${eventType}`, finalContentIds);
+        }
+        
         // PARÂMETROS PADRONIZADOS PARA TODOS OS EVENTOS
         const standardParams = {
             // Identidade
@@ -196,13 +212,18 @@ async function sendEvent(eventType, data = {}) {
             content_category: currentPageData.content_category,
             content_name: currentPageData.content_name,
             num_items: currentPageData.num_items,
+            // CONTENT_IDS CORRETOS (enviados para backend)
+            content_ids: finalContentIds,
+            // Dados de valor/moeda se disponíveis
+            value: data.value || null,
+            currency: data.currency || null,
             // Dados adicionais padronizados
             timestamp: Date.now(),
             page_url: window.location.href,
             page_title: document.title,
             device_type: /Mobile|Android|iPhone|iPad/.test(navigator.userAgent) ? 'mobile' : 'desktop',
-            // Dados específicos do evento
-            ...data
+            // Outros dados específicos do evento (exceto content_ids que já tratamos)
+            ...Object.fromEntries(Object.entries(data).filter(([key]) => !['content_ids', 'value', 'currency'].includes(key)))
         };
 
         TrackingUtils.log(`Parâmetros padronizados para ${eventType}`, standardParams);
@@ -242,24 +263,15 @@ async function sendEvent(eventType, data = {}) {
                 content_name: standardParams.content_name,
                 num_items: standardParams.num_items,
                 language: standardParams.language,
-                device_type: standardParams.device_type
+                device_type: standardParams.device_type,
+                // USAR OS MESMOS CONTENT_IDS do backend
+                content_ids: standardParams.content_ids
             };
             
-            // Adicionar dados específicos do pixel
-            if (data.content_ids) pixelData.content_ids = data.content_ids;
-            if (data.value) pixelData.value = data.value;
-            if (data.currency) pixelData.currency = data.currency;
+            // Adicionar outros dados específicos do pixel
+            if (standardParams.value) pixelData.value = standardParams.value;
+            if (standardParams.currency) pixelData.currency = standardParams.currency;
             if (data.search_string) pixelData.search_string = data.search_string;
-            
-            // OTIMIZAÇÃO PARA CATÁLOGO: Usar IDs reais dos produtos
-            if (!pixelData.content_ids) {
-                const realProductIds = getRealProductIds();
-                if (realProductIds.length > 0) {
-                    pixelData.content_ids = realProductIds;
-                } else {
-                    pixelData.content_ids = [contentId]; // Fallback
-                }
-            }
 
             // Enviar para o pixel com dados padronizados
             if (customEvents.includes(eventType)) {
