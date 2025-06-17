@@ -83,7 +83,37 @@ async function sendEvent(eventType, data = {}) {
     }
 
     try {
-        // Preparar payload para API
+        // Preparar parâmetros otimizados para ambos (API e Pixel)
+        const optimizedParams = {
+            app: 'Pixel Tracker',
+            language: 'pt-BR',
+            referrer_url: document.referrer || ''
+        };
+
+        // Adicionar parâmetros específicos por tipo de evento
+        if (eventType === 'ViewContent' || eventType === 'AddToCart') {
+            optimizedParams.content_type = 'product';
+            optimizedParams.content_category = getProductCategory();
+            optimizedParams.content_name = getProductName();
+            optimizedParams.num_items = 1;
+        } else if (eventType === 'PageView') {
+            optimizedParams.content_type = getPageType();
+            optimizedParams.content_category = getPageCategory();
+            optimizedParams.content_name = getPageName();
+            optimizedParams.num_items = 1;
+        } else if (eventType === 'InitiateCheckout') {
+            optimizedParams.content_type = 'checkout';
+            optimizedParams.content_category = ['Checkout'];
+            optimizedParams.content_name = ['Checkout Process'];
+            optimizedParams.num_items = getCartItemsCount();
+        } else if (eventType === 'Lead') {
+            optimizedParams.content_type = 'lead_form';
+            optimizedParams.content_category = ['Lead Generation'];
+            optimizedParams.content_name = ['Contact Form'];
+            optimizedParams.num_items = 1;
+        }
+
+        // Preparar payload para API (incluindo parâmetros otimizados)
         const payload = { 
             contentId, 
             eventType, 
@@ -91,7 +121,8 @@ async function sendEvent(eventType, data = {}) {
             _fbc, 
             _fbp, 
             userId,
-            ...data
+            ...data,
+            ...optimizedParams
         };
         
         // Adicionar dados pessoais se disponíveis
@@ -123,8 +154,12 @@ async function sendEvent(eventType, data = {}) {
         if (typeof fbq !== 'undefined' && responseData.eventID) {
             const customEvents = ['Scroll_25', 'Scroll_50', 'Scroll_75', 'Scroll_90', 'Timer_1min', 'PlayVideo', 'ViewVideo_25', 'ViewVideo_50', 'ViewVideo_75', 'ViewVideo_90'];
             
-            // Preparar dados para o pixel
-            const pixelData = {};
+            // Preparar dados para o pixel (reutilizando parâmetros otimizados)
+            const pixelData = {
+                ...optimizedParams
+            };
+            
+            // Adicionar dados específicos do pixel
             if (data.content_ids) pixelData.content_ids = data.content_ids;
             if (data.value) pixelData.value = data.value;
             if (data.currency) pixelData.currency = data.currency;
@@ -132,34 +167,6 @@ async function sendEvent(eventType, data = {}) {
             // Adicionar content_ids padrão se não fornecido
             if (!pixelData.content_ids) {
                 pixelData.content_ids = [contentId];
-            }
-
-            // Adicionar parâmetros otimizados para melhor segmentação
-            pixelData.language = 'pt-BR';
-            pixelData.referrer_url = document.referrer || '';
-            pixelData.app = 'Pixel Tracker';
-            
-            // Parâmetros específicos por tipo de evento
-            if (eventType === 'ViewContent' || eventType === 'AddToCart') {
-                pixelData.content_type = 'product';
-                pixelData.content_category = getProductCategory();
-                pixelData.content_name = getProductName();
-                pixelData.num_items = 1;
-            } else if (eventType === 'PageView') {
-                pixelData.content_type = getPageType();
-                pixelData.content_category = getPageCategory();
-                pixelData.content_name = getPageName();
-                pixelData.num_items = 1;
-            } else if (eventType === 'InitiateCheckout') {
-                pixelData.content_type = 'checkout';
-                pixelData.content_category = ['Checkout'];
-                pixelData.content_name = ['Checkout Process'];
-                pixelData.num_items = getCartItemsCount();
-            } else if (eventType === 'Lead') {
-                pixelData.content_type = 'lead_form';
-                pixelData.content_category = ['Lead Generation'];
-                pixelData.content_name = ['Contact Form'];
-                pixelData.num_items = 1;
             }
 
             if (customEvents.includes(eventType)) {
