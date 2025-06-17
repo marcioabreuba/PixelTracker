@@ -60,6 +60,33 @@ const TrackingUtils = {
         const date = new Date();
         date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
         document.cookie = `${name}=${encodeURIComponent(value)}; expires=${date.toUTCString()}; path=/`;
+    },
+
+    // Função para normalizar valores de preço (corrigir imprecisões do parseFloat)
+    normalizePrice(priceText) {
+        if (!priceText) return null;
+        
+        // Extrair apenas números, pontos e vírgulas
+        const cleanText = priceText.toString().replace(/[^\d.,]/g, '');
+        if (!cleanText) return null;
+        
+        // Converter vírgula para ponto (formato brasileiro)
+        const normalizedText = cleanText.replace(',', '.');
+        
+        // Converter para número
+        const price = parseFloat(normalizedText);
+        if (isNaN(price)) return null;
+        
+        // Arredondar para 2 casas decimais para evitar imprecisões
+        const roundedPrice = Math.round(price * 100) / 100;
+        
+        // Se for um número inteiro, retornar como inteiro
+        if (roundedPrice % 1 === 0) {
+            return Math.floor(roundedPrice);
+        }
+        
+        // Caso contrário, retornar com até 2 casas decimais
+        return roundedPrice;
     }
 };
 
@@ -557,8 +584,8 @@ function getShopifyProductData() {
     const priceElement = TrackingUtils.safeQuery('.price, .product-price, [data-price], .money');
     if (priceElement) {
         const priceText = priceElement.textContent || priceElement.dataset.price;
-        const price = parseFloat(priceText.replace(/[^\d.,]/g, '').replace(',', '.'));
-        if (!isNaN(price)) {
+        const price = TrackingUtils.normalizePrice(priceText);
+        if (price !== null) {
             productData.value = price;
             productData.currency = 'BRL';
         }
@@ -669,8 +696,8 @@ function getCartPageData() {
         const priceElement = item.querySelector('.cart-item-price, .price, [data-price]');
         if (priceElement) {
             const priceText = priceElement.textContent || priceElement.dataset.price;
-            const price = parseFloat(priceText.replace(/[^\d.,]/g, '').replace(',', '.'));
-            if (!isNaN(price)) totalValue += price;
+            const price = TrackingUtils.normalizePrice(priceText);
+            if (price !== null) totalValue += price;
         }
     });
     
@@ -684,8 +711,8 @@ function getCartPageData() {
         const totalElement = TrackingUtils.safeQuery('.cart-total, .total-price, [data-cart-total]');
         if (totalElement) {
             const totalText = totalElement.textContent;
-            const total = parseFloat(totalText.replace(/[^\d.,]/g, '').replace(',', '.'));
-            if (!isNaN(total)) totalValue = total;
+            const total = TrackingUtils.normalizePrice(totalText);
+            if (total !== null) totalValue = total;
         }
     }
     
