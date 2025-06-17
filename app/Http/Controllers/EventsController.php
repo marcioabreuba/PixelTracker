@@ -211,6 +211,10 @@ class EventsController extends Controller
                 'content_name' => 'nullable|array',
                 'num_items' => 'nullable|integer',
                 'search_string' => 'nullable|string',
+                // Parâmetros de produto/conteúdo
+                'content_ids' => 'nullable|array',
+                'value' => 'nullable|numeric',
+                'currency' => 'nullable|string|size:3',
                 // Novos parâmetros padronizados
                 'timestamp' => 'nullable|integer',
                 'page_url' => 'nullable|string',
@@ -266,8 +270,22 @@ class EventsController extends Controller
                 return response()->json(['error' => 'Tipo de evento inválido.'], 400);
             }
 
-            // Cria CustomData base
-            $customData = (new CustomData())->setContentIds([$contentId]);
+            // Determina os content_ids corretos
+            $finalContentIds = [$contentId]; // Fallback padrão (domínio)
+            
+            // Se o frontend enviou content_ids específicos, usar eles
+            if (isset($validatedData['content_ids']) && !empty($validatedData['content_ids'])) {
+                $finalContentIds = array_filter($validatedData['content_ids'], function($id) {
+                    return !empty($id) && trim($id) !== '';
+                });
+                // Se ainda estiver vazio, usar o contentId como fallback
+                if (empty($finalContentIds)) {
+                    $finalContentIds = [$contentId];
+                }
+            }
+            
+            // Cria CustomData base com os content_ids corretos
+            $customData = (new CustomData())->setContentIds($finalContentIds);
             
             // Adiciona parâmetros específicos baseados no tipo de evento
             if ($eventType === 'Search' && isset($validatedData['search_string']) && !empty($validatedData['search_string'])) {
@@ -289,6 +307,15 @@ class EventsController extends Controller
             
             if (isset($validatedData['num_items']) && !empty($validatedData['num_items'])) {
                 $customData->setNumItems($validatedData['num_items']);
+            }
+            
+            // Adiciona value e currency se disponíveis (importante para Purchase, AddToCart, etc.)
+            if (isset($validatedData['value']) && !empty($validatedData['value'])) {
+                $customData->setValue($validatedData['value']);
+            }
+            
+            if (isset($validatedData['currency']) && !empty($validatedData['currency'])) {
+                $customData->setCurrency($validatedData['currency']);
             }
 
             $event = $eventClass::create()
@@ -342,12 +369,14 @@ class EventsController extends Controller
                     'ph' => $validatedData['ph'] ?? '',
                 ],
                 'custom_data' => [
-                    'content_ids' => [$contentId],
+                    'content_ids' => $finalContentIds,
                     'search_string' => $validatedData['search_string'] ?? null,
                     'content_type' => $validatedData['content_type'] ?? null,
                     'content_category' => $validatedData['content_category'] ?? null,
                     'content_name' => $validatedData['content_name'] ?? null,
                     'num_items' => $validatedData['num_items'] ?? null,
+                    'value' => $validatedData['value'] ?? null,
+                    'currency' => $validatedData['currency'] ?? null,
                 ],
                 'standardized_params' => [
                     'app' => $validatedData['app'] ?? null,

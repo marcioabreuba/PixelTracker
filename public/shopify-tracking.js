@@ -465,12 +465,14 @@ function detectAndSendPageEvents() {
         
         // 2. ViewHome - Página inicial
         if (path === '/' || path === '' || path === '/index' || path.includes('/pages/home')) {
-            sendEvent('ViewHome');
+            const homeData = getHomePageData();
+            sendEvent('ViewHome', homeData);
         }
         
         // 3. ViewList - Páginas de coleção/categoria
         else if (path.includes('/collections/') && !path.includes('/products/')) {
-            sendEvent('ViewList');
+            const collectionData = getCollectionPageData();
+            sendEvent('ViewList', collectionData);
         }
         
         // 4. ViewContent - Páginas de produto
@@ -481,14 +483,15 @@ function detectAndSendPageEvents() {
         
         // 5. ViewCart - Página do carrinho
         else if (path.includes('/cart')) {
-            sendEvent('ViewCart');
+            const cartData = getCartPageData();
+            sendEvent('ViewCart', cartData);
         }
         
         // 6. Search - Página de resultados de busca
         else if (path.includes('/search') || search.includes('q=') || search.includes('query=')) {
             const urlParams = new URLSearchParams(search);
             const searchQuery = urlParams.get('q') || urlParams.get('query') || '';
-            const searchData = searchQuery ? { search_string: searchQuery } : {};
+            const searchData = getSearchPageData(searchQuery);
             sendEvent('Search', searchData);
         }
         
@@ -500,16 +503,26 @@ function getShopifyProductData() {
     const productData = {};
     
     // Tentar obter ID do produto
-    const productForm = document.querySelector('form[action*="/cart/add"]');
+    const productForm = TrackingUtils.safeQuery('form[action*="/cart/add"]');
     if (productForm) {
         const variantInput = productForm.querySelector('[name="id"]');
-        if (variantInput) {
+        if (variantInput && variantInput.value) {
             productData.content_ids = [variantInput.value];
+            TrackingUtils.log('Product variant ID encontrado', variantInput.value);
+        }
+    }
+
+    // Se não encontrou via form, usar getRealProductIds
+    if (!productData.content_ids) {
+        const realIds = getRealProductIds();
+        if (realIds.length > 0) {
+            productData.content_ids = realIds;
+            TrackingUtils.log('Product IDs via getRealProductIds', realIds);
         }
     }
 
     // Tentar obter preço
-    const priceElement = document.querySelector('.price, .product-price, [data-price], .money');
+    const priceElement = TrackingUtils.safeQuery('.price, .product-price, [data-price], .money');
     if (priceElement) {
         const priceText = priceElement.textContent || priceElement.dataset.price;
         const price = parseFloat(priceText.replace(/[^\d.,]/g, '').replace(',', '.'));
@@ -520,6 +533,205 @@ function getShopifyProductData() {
     }
 
     return productData;
+}
+
+// Função para obter dados da página inicial (ViewHome)
+function getHomePageData() {
+    const homeData = {};
+    
+    // Obter produtos em destaque na home
+    const featuredProductIds = getFeaturedProductIds();
+    if (featuredProductIds.length > 0) {
+        homeData.content_ids = featuredProductIds;
+        TrackingUtils.log('Home featured products', featuredProductIds);
+    } else {
+        // Fallback: usar qualquer produto visível na home
+        const productElements = TrackingUtils.safeQueryAll('[data-product-id], [href*="/products/"]');
+        const visibleProductIds = [];
+        
+        productElements.forEach(element => {
+            if (element.dataset.productId) {
+                visibleProductIds.push(element.dataset.productId);
+            } else if (element.href) {
+                const productMatch = element.href.match(/\/products\/([^\/\?]+)/);
+                if (productMatch) visibleProductIds.push(productMatch[1]);
+            }
+        });
+        
+        if (visibleProductIds.length > 0) {
+            homeData.content_ids = [...new Set(visibleProductIds)].slice(0, 10); // Max 10 produtos
+            TrackingUtils.log('Home visible products', homeData.content_ids);
+        }
+    }
+    
+    return homeData;
+}
+
+// Função para obter dados da página de coleção (ViewList)
+function getCollectionPageData() {
+    const collectionData = {};
+    
+    // Obter IDs dos produtos da coleção
+    const productElements = TrackingUtils.safeQueryAll('.product-item [data-product-id], .product-card [data-product-id], .grid-product [data-product-id], [href*="/products/"]');
+    const productIds = [];
+    
+    productElements.forEach(element => {
+        if (element.dataset.productId) {
+            productIds.push(element.dataset.productId);
+        } else if (element.href) {
+            const productMatch = element.href.match(/\/products\/([^\/\?]+)/);
+            if (productMatch) productIds.push(productMatch[1]);
+        }
+    });
+    
+    // Tentar obter variant IDs dos produtos visíveis
+    const variantElements = TrackingUtils.safeQueryAll('[data-variant-id]');
+    variantElements.forEach(element => {
+        if (element.dataset.variantId) {
+            productIds.push(element.dataset.variantId);
+        }
+    });
+    
+    if (productIds.length > 0) {
+        collectionData.content_ids = [...new Set(productIds)]; // Remover duplicatas
+        TrackingUtils.log('Collection products', collectionData.content_ids);
+    } else {
+        // Fallback: extrair da URL da coleção
+        const pathMatch = window.location.pathname.match(/\/collections\/([^\/\?]+)/);
+        if (pathMatch) {
+            collectionData.content_ids = [pathMatch[1]]; // Nome da coleção como fallback
+        }
+    }
+    
+    return collectionData;
+}
+
+// Função para obter dados da página do carrinho (ViewCart)
+function getCartPageData() {
+    const cartData = {};
+    
+    // Obter IDs dos produtos no carrinho
+    const cartItems = TrackingUtils.safeQueryAll('[data-variant-id], [data-product-id], .cart-item');
+    const productIds = [];
+    let totalValue = 0;
+    
+    cartItems.forEach(item => {
+        // Variant ID (prioritário)
+        if (item.dataset.variantId) {
+            productIds.push(item.dataset.variantId);
+        }
+        // Product ID
+        else if (item.dataset.productId) {
+            productIds.push(item.dataset.productId);
+        }
+        // Tentar extrair de links dentro do item
+        else {
+            const productLink = item.querySelector('[href*="/products/"]');
+            if (productLink) {
+                const productMatch = productLink.href.match(/\/products\/([^\/\?]+)/);
+                if (productMatch) productIds.push(productMatch[1]);
+            }
+        }
+        
+        // Tentar obter preço do item
+        const priceElement = item.querySelector('.cart-item-price, .price, [data-price]');
+        if (priceElement) {
+            const priceText = priceElement.textContent || priceElement.dataset.price;
+            const price = parseFloat(priceText.replace(/[^\d.,]/g, '').replace(',', '.'));
+            if (!isNaN(price)) totalValue += price;
+        }
+    });
+    
+    if (productIds.length > 0) {
+        cartData.content_ids = [...new Set(productIds)]; // Remover duplicatas
+        TrackingUtils.log('Cart products', cartData.content_ids);
+    }
+    
+    // Tentar obter valor total do carrinho
+    if (totalValue === 0) {
+        const totalElement = TrackingUtils.safeQuery('.cart-total, .total-price, [data-cart-total]');
+        if (totalElement) {
+            const totalText = totalElement.textContent;
+            const total = parseFloat(totalText.replace(/[^\d.,]/g, '').replace(',', '.'));
+            if (!isNaN(total)) totalValue = total;
+        }
+    }
+    
+    if (totalValue > 0) {
+        cartData.value = totalValue;
+        cartData.currency = 'BRL';
+    }
+    
+    return cartData;
+}
+
+// Função para obter dados da página de busca (Search)
+function getSearchPageData(searchQuery) {
+    const searchData = {};
+    
+    // Adicionar termo de busca
+    if (searchQuery) {
+        searchData.search_string = searchQuery;
+        TrackingUtils.log('Search query', searchQuery);
+    }
+    
+    // Obter IDs dos produtos nos resultados
+    const resultElements = TrackingUtils.safeQueryAll('.search-result [data-product-id], .product-item [data-product-id], .product-card [data-product-id], [href*="/products/"]');
+    const productIds = [];
+    
+    resultElements.forEach(element => {
+        if (element.dataset.productId) {
+            productIds.push(element.dataset.productId);
+        } else if (element.href) {
+            const productMatch = element.href.match(/\/products\/([^\/\?]+)/);
+            if (productMatch) productIds.push(productMatch[1]);
+        }
+    });
+    
+    if (productIds.length > 0) {
+        searchData.content_ids = [...new Set(productIds)]; // Remover duplicatas
+        TrackingUtils.log('Search results products', searchData.content_ids);
+    }
+    
+    return searchData;
+}
+
+// Função melhorada para obter produtos em destaque
+function getFeaturedProductIds() {
+    // Buscar produtos em destaque na home com seletores mais específicos
+    const featuredSelectors = [
+        '.featured-product [data-product-id]',
+        '.featured-products [data-product-id]', 
+        '.hero-product [data-product-id]',
+        '.recommended-products [data-product-id]',
+        '.trending-products [data-product-id]',
+        '.best-sellers [data-product-id]',
+        '.product-recommendations [data-product-id]',
+        '.homepage-products [data-product-id]'
+    ];
+    
+    const productIds = [];
+    
+    featuredSelectors.forEach(selector => {
+        const elements = TrackingUtils.safeQueryAll(selector);
+        elements.forEach(element => {
+            if (element.dataset.productId) {
+                productIds.push(element.dataset.productId);
+            }
+        });
+    });
+    
+    // Se não encontrou produtos em destaque, pegar primeiros produtos visíveis
+    if (productIds.length === 0) {
+        const allProducts = TrackingUtils.safeQueryAll('.product-card [data-product-id], .product-item [data-product-id]');
+        allProducts.forEach(element => {
+            if (element.dataset.productId) {
+                productIds.push(element.dataset.productId);
+            }
+        });
+    }
+    
+    return [...new Set(productIds)].slice(0, 10); // Máximo 10 produtos, sem duplicatas
 }
 
 // Função para obter dados da página atual (para todos os eventos)
@@ -586,60 +798,130 @@ function getCurrentPageData() {
     }
 }
 
-// Função para obter IDs reais dos produtos (otimização para catálogo)
+// Função melhorada para obter IDs reais dos produtos (otimização para catálogo)
 function getRealProductIds() {
     const productIds = [];
+    const path = window.location.pathname;
     
-    // 1. Tentar obter de página de produto
-    if (window.location.pathname.includes('/products/')) {
-        const productForm = document.querySelector('form[action*="/cart/add"]');
+    // 1. Para páginas de produto - Priorizar variant ID
+    if (path.includes('/products/')) {
+        // Variant ID do form (mais importante para tracking)
+        const productForm = TrackingUtils.safeQuery('form[action*="/cart/add"]');
         if (productForm) {
             const variantInput = productForm.querySelector('[name="id"]');
             if (variantInput && variantInput.value) {
                 productIds.push(variantInput.value);
+                TrackingUtils.log('Variant ID from form', variantInput.value);
             }
         }
         
-        // Tentar extrair product ID da URL também
-        const pathMatch = window.location.pathname.match(/\/products\/([^\/\?]+)/);
+        // Product ID de elementos Shopify
+        const productDataElements = TrackingUtils.safeQueryAll('[data-product-id]');
+        productDataElements.forEach(element => {
+            if (element.dataset.productId) {
+                productIds.push(element.dataset.productId);
+            }
+        });
+        
+        // Extrair do handle da URL como fallback
+        const pathMatch = path.match(/\/products\/([^\/\?]+)/);
         if (pathMatch && pathMatch[1]) {
             productIds.push(pathMatch[1]);
         }
     }
     
-    // 2. Tentar obter de carrinho
-    const cartItems = document.querySelectorAll('[data-variant-id], [data-product-id]');
-    cartItems.forEach(item => {
-        const variantId = item.dataset.variantId;
-        const productId = item.dataset.productId;
-        if (variantId) productIds.push(variantId);
-        if (productId) productIds.push(productId);
-    });
-    
-    // 3. Tentar obter de meta tags
-    const productMeta = document.querySelector('meta[property="product:retailer_item_id"]');
-    if (productMeta && productMeta.content) {
-        productIds.push(productMeta.content);
+    // 2. Para páginas de coleção
+    else if (path.includes('/collections/')) {
+        const productElements = TrackingUtils.safeQueryAll('[data-product-id], [data-variant-id]');
+        productElements.forEach(element => {
+            if (element.dataset.variantId) productIds.push(element.dataset.variantId);
+            if (element.dataset.productId) productIds.push(element.dataset.productId);
+        });
     }
     
-    // 4. Tentar obter de dados estruturados JSON-LD
-    const jsonLdScripts = document.querySelectorAll('script[type="application/ld+json"]');
-    jsonLdScripts.forEach(script => {
-        try {
-            const data = JSON.parse(script.textContent);
-            if (data['@type'] === 'Product' && data.sku) {
-                productIds.push(data.sku);
+    // 3. Para páginas de carrinho
+    else if (path.includes('/cart')) {
+        const cartItems = TrackingUtils.safeQueryAll('[data-variant-id], [data-product-id], .cart-item');
+        cartItems.forEach(item => {
+            if (item.dataset.variantId) productIds.push(item.dataset.variantId);
+            if (item.dataset.productId) productIds.push(item.dataset.productId);
+        });
+    }
+    
+    // 4. Para qualquer página - buscar produtos visíveis
+    else {
+        const visibleProducts = TrackingUtils.safeQueryAll('[data-product-id], [data-variant-id], [href*="/products/"]');
+        visibleProducts.forEach(element => {
+            if (element.dataset.variantId) productIds.push(element.dataset.variantId);
+            if (element.dataset.productId) productIds.push(element.dataset.productId);
+            if (element.href) {
+                const productMatch = element.href.match(/\/products\/([^\/\?]+)/);
+                if (productMatch) productIds.push(productMatch[1]);
             }
-            if (data['@type'] === 'Product' && data.productID) {
-                productIds.push(data.productID);
-            }
-        } catch (e) {
-            // Ignorar erros de parsing
+        });
+    }
+    
+    // 5. Tentar obter de meta tags (sempre útil)
+    const metaSelectors = [
+        'meta[property="product:retailer_item_id"]',
+        'meta[name="shopify-product-id"]',
+        'meta[name="shopify-variant-id"]'
+    ];
+    
+    metaSelectors.forEach(selector => {
+        const meta = TrackingUtils.safeQuery(selector);
+        if (meta && meta.content) {
+            productIds.push(meta.content);
         }
     });
     
-    // Remover duplicatas e valores vazios
-    return [...new Set(productIds.filter(id => id && id.trim() !== ''))];
+    // 6. Tentar obter de dados estruturados JSON-LD
+    const jsonLdScripts = TrackingUtils.safeQueryAll('script[type="application/ld+json"]');
+    jsonLdScripts.forEach(script => {
+        try {
+            const data = JSON.parse(script.textContent);
+            
+            // Produto único
+            if (data['@type'] === 'Product') {
+                if (data.sku) productIds.push(data.sku);
+                if (data.productID) productIds.push(data.productID);
+                if (data.identifier) productIds.push(data.identifier);
+            }
+            
+            // Array de produtos
+            if (Array.isArray(data) || data['@graph']) {
+                const products = data['@graph'] || data;
+                products.forEach(item => {
+                    if (item['@type'] === 'Product') {
+                        if (item.sku) productIds.push(item.sku);
+                        if (item.productID) productIds.push(item.productID);
+                        if (item.identifier) productIds.push(item.identifier);
+                    }
+                });
+            }
+        } catch (e) {
+            // Ignorar erros de parsing JSON
+        }
+    });
+    
+    // 7. Tentar obter de variáveis Shopify globais
+    if (typeof window.ShopifyAnalytics !== 'undefined' && window.ShopifyAnalytics.meta) {
+        const meta = window.ShopifyAnalytics.meta;
+        if (meta.product && meta.product.id) productIds.push(meta.product.id.toString());
+        if (meta.product && meta.product.variants) {
+            meta.product.variants.forEach(variant => {
+                if (variant.id) productIds.push(variant.id.toString());
+            });
+        }
+    }
+    
+    // Remover duplicatas, valores vazios e manter apenas valores válidos
+    const validIds = [...new Set(productIds.filter(id => {
+        return id && id.toString().trim() !== '' && id.toString().length > 0;
+    }))];
+    
+    TrackingUtils.log('All found product IDs', validIds);
+    return validIds;
 }
 
 // Funções auxiliares para parâmetros otimizados
