@@ -261,11 +261,34 @@ class EventsController extends Controller
                 return response()->json(['error' => 'Tipo de evento inválido.'], 400);
             }
 
+            // Cria CustomData base
+            $customData = (new CustomData())->setContentIds([$contentId]);
+            
+            // Adiciona parâmetros específicos baseados no tipo de evento
+            if ($eventType === 'Search' && isset($validatedData['search_string']) && !empty($validatedData['search_string'])) {
+                $customData->setSearchString($validatedData['search_string']);
+            }
+            
+            // Adiciona outros parâmetros otimizados se disponíveis
+            if (isset($validatedData['content_type']) && !empty($validatedData['content_type'])) {
+                $customData->setContentType($validatedData['content_type']);
+            }
+            
+            if (isset($validatedData['content_category']) && !empty($validatedData['content_category'])) {
+                $customData->setContentCategory($validatedData['content_category']);
+            }
+            
+            if (isset($validatedData['content_name']) && !empty($validatedData['content_name'])) {
+                $customData->setContentName($validatedData['content_name']);
+            }
+            
+            if (isset($validatedData['num_items']) && !empty($validatedData['num_items'])) {
+                $customData->setNumItems($validatedData['num_items']);
+            }
+
             $event = $eventClass::create()
                 ->setEventSourceUrl($event_source_url)
-                ->setCustomData(
-                    (new CustomData())->setContentIds([$contentId])
-                );
+                ->setCustomData($customData);
             $eventID = $event->getEventId();
 
             $advancedMatching = $event->getUserData()
@@ -312,6 +335,14 @@ class EventsController extends Controller
                     'ln' => $validatedData['ln'] ?? '',
                     'em' => $validatedData['em'] ?? '',
                     'ph' => $validatedData['ph'] ?? '',
+                ],
+                'custom_data' => [
+                    'content_ids' => [$contentId],
+                    'search_string' => $validatedData['search_string'] ?? null,
+                    'content_type' => $validatedData['content_type'] ?? null,
+                    'content_category' => $validatedData['content_category'] ?? null,
+                    'content_name' => $validatedData['content_name'] ?? null,
+                    'num_items' => $validatedData['num_items'] ?? null,
                 ],
             ];
 
