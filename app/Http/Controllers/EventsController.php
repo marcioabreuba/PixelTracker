@@ -193,7 +193,7 @@ class EventsController extends Controller
             ]);
 
             $validatedData = $request->validate([
-                'eventType' => 'required|string|in:Init,PageView,ViewContent,Lead,AddToWishlist,AddToCart,InitiateCheckout,Purchase,Scroll_25,Scroll_50,Scroll_75,Scroll_90,Timer_1min,PlayVideo,ViewVideo_25,ViewVideo_50,ViewVideo_75,ViewVideo_90',
+                'eventType' => 'required|string|in:Init,PageView,ViewHome,ViewList,ViewContent,AddToCart,ViewCart,Search,Lead,AddToWishlist,InitiateCheckout,Purchase,Scroll_25,Scroll_50,Scroll_75,Scroll_90,Timer_1min,PlayVideo,ViewVideo_25,ViewVideo_50,ViewVideo_75,ViewVideo_90',
                 'event_source_url' => 'nullable|string',
                 '_fbc' => 'nullable|string', 
                 '_fbp' => 'nullable|string',
@@ -202,6 +202,15 @@ class EventsController extends Controller
                 'ln' => 'nullable|string|max:255',
                 'em' => 'nullable|email|max:255',
                 'ph' => 'nullable|string|max:15',
+                // Novos parâmetros otimizados
+                'app' => 'nullable|string',
+                'language' => 'nullable|string',
+                'referrer_url' => 'nullable|string',
+                'content_type' => 'nullable|string',
+                'content_category' => 'nullable|array',
+                'content_name' => 'nullable|array',
+                'num_items' => 'nullable|integer',
+                'search_string' => 'nullable|string',
             ]);
 
             $eventType = $validatedData['eventType'];

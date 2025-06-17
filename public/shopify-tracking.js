@@ -241,6 +241,9 @@ async function initPixel() {
 
 // Configurar eventos automáticos do Shopify
 function setupShopifyEvents() {
+    // Detectar e enviar eventos automaticamente baseado na página atual
+    detectAndSendPageEvents();
+    
     // Detectar AddToCart
     document.addEventListener('click', (e) => {
         const button = e.target.closest('[name="add"], .btn-product-form, .product-form__cart-submit, .product-form__buttons button[type="submit"]');
@@ -252,11 +255,25 @@ function setupShopifyEvents() {
         }
     });
 
-    // Detectar InitiateCheckout
+    // Detectar ViewCart (quando vai para página do carrinho)
     document.addEventListener('click', (e) => {
-        const checkoutButton = e.target.closest('.cart__checkout-button, [name="goto_checkout"], .btn--checkout, [href*="checkout"]');
-        if (checkoutButton) {
-            sendEvent('InitiateCheckout');
+        const cartButton = e.target.closest('[href*="/cart"], .cart-link, .header-cart');
+        if (cartButton) {
+            setTimeout(() => {
+                sendEvent('ViewCart');
+            }, 500);
+        }
+    });
+
+    // Detectar Search (formulários de busca)
+    document.addEventListener('submit', (e) => {
+        const searchForm = e.target;
+        if (searchForm.matches('form[action*="/search"], .search-form, form[role="search"]')) {
+            setTimeout(() => {
+                const searchQuery = searchForm.querySelector('input[name="q"], input[name="query"], input[type="search"]');
+                const searchData = searchQuery ? { search_string: searchQuery.value } : {};
+                sendEvent('Search', searchData);
+            }, 100);
         }
     });
 
@@ -268,22 +285,59 @@ function setupShopifyEvents() {
         }
     });
 
-    // ViewContent para páginas de produto
-    if (window.location.pathname.includes('/products/')) {
-        setTimeout(() => {
+    // Detectar InitiateCheckout
+    document.addEventListener('click', (e) => {
+        const checkoutButton = e.target.closest('.cart__checkout-button, [name="goto_checkout"], .btn--checkout, [href*="checkout"]');
+        if (checkoutButton) {
+            sendEvent('InitiateCheckout');
+        }
+    });
+
+    // Tracking de scroll, tempo e vídeos
+    setupScrollTracking();
+    setupTimeTracking();
+    setupVideoTracking();
+}
+
+// Função para detectar e enviar eventos baseados na página atual
+function detectAndSendPageEvents() {
+    const path = window.location.pathname;
+    const search = window.location.search;
+    
+    // Aguardar carregamento completo da página
+    setTimeout(() => {
+        // 1. PageView sempre é enviado primeiro (já enviado no initPixel)
+        
+        // 2. ViewHome - Página inicial
+        if (path === '/' || path === '' || path === '/index' || path.includes('/pages/home')) {
+            sendEvent('ViewHome');
+        }
+        
+        // 3. ViewList - Páginas de coleção/categoria
+        else if (path.includes('/collections/') && !path.includes('/products/')) {
+            sendEvent('ViewList');
+        }
+        
+        // 4. ViewContent - Páginas de produto
+        else if (path.includes('/products/')) {
             const productData = getShopifyProductData();
             sendEvent('ViewContent', productData);
-        }, 1000);
-    }
-
-    // Tracking de scroll
-    setupScrollTracking();
-
-    // Tracking de tempo
-    setupTimeTracking();
-
-    // Tracking de vídeos
-    setupVideoTracking();
+        }
+        
+        // 5. ViewCart - Página do carrinho
+        else if (path.includes('/cart')) {
+            sendEvent('ViewCart');
+        }
+        
+        // 6. Search - Página de resultados de busca
+        else if (path.includes('/search') || search.includes('q=') || search.includes('query=')) {
+            const urlParams = new URLSearchParams(search);
+            const searchQuery = urlParams.get('q') || urlParams.get('query') || '';
+            const searchData = searchQuery ? { search_string: searchQuery } : {};
+            sendEvent('Search', searchData);
+        }
+        
+    }, 1000); // Aguardar 1 segundo para garantir que a página carregou
 }
 
 // Função para obter dados do produto Shopify
@@ -316,6 +370,8 @@ function getShopifyProductData() {
 // Função para obter dados da página atual (para todos os eventos)
 function getCurrentPageData() {
     const pageType = getPageType();
+    const path = window.location.pathname;
+    const search = window.location.search;
     
     if (pageType === 'product') {
         return {
@@ -324,18 +380,45 @@ function getCurrentPageData() {
             content_name: getProductName(),
             num_items: 1
         };
+    } else if (pageType === 'home' || path === '/' || path === '') {
+        return {
+            content_type: 'home',
+            content_category: ['Home'],
+            content_name: ['Home Page'],
+            num_items: 1
+        };
+    } else if (path.includes('/collections/') && !path.includes('/products/')) {
+        // ViewList - Páginas de coleção
+        const collectionName = getCollectionName();
+        return {
+            content_type: 'product_group',
+            content_category: ['Collection', collectionName],
+            content_name: [collectionName + ' Collection'],
+            num_items: getCollectionProductsCount()
+        };
+    } else if (path.includes('/cart')) {
+        // ViewCart - Página do carrinho
+        return {
+            content_type: 'cart',
+            content_category: ['Cart'],
+            content_name: ['Shopping Cart'],
+            num_items: getCartItemsCount()
+        };
+    } else if (path.includes('/search') || search.includes('q=')) {
+        // Search - Página de busca
+        const urlParams = new URLSearchParams(search);
+        const searchQuery = urlParams.get('q') || urlParams.get('query') || 'search';
+        return {
+            content_type: 'search_results',
+            content_category: ['Search'],
+            content_name: ['Search: ' + searchQuery],
+            num_items: getSearchResultsCount()
+        };
     } else if (pageType === 'checkout') {
         return {
             content_type: 'checkout',
             content_category: ['Checkout'],
             content_name: ['Checkout Process'],
-            num_items: getCartItemsCount()
-        };
-    } else if (pageType === 'cart') {
-        return {
-            content_type: 'cart',
-            content_category: ['Cart'],
-            content_name: ['Shopping Cart'],
             num_items: getCartItemsCount()
         };
     } else {
@@ -609,3 +692,76 @@ document.addEventListener('DOMContentLoaded', () => {
 // Expor funções globalmente para uso manual
 window.sendEvent = sendEvent;
 window.initPixel = initPixel;
+
+// Função para obter nome da coleção atual
+function getCollectionName() {
+    // Tentar obter do breadcrumb
+    const breadcrumb = document.querySelector('.breadcrumb, .breadcrumbs');
+    if (breadcrumb) {
+        const links = breadcrumb.querySelectorAll('a');
+        if (links.length > 0) {
+            return links[links.length - 1].textContent.trim();
+        }
+    }
+    
+    // Tentar obter do título da página
+    const collectionTitle = document.querySelector('h1.collection-title, .collection-header h1, h1[class*="collection"]');
+    if (collectionTitle) {
+        return collectionTitle.textContent.trim();
+    }
+    
+    // Tentar extrair da URL
+    const pathParts = window.location.pathname.split('/');
+    const collectionIndex = pathParts.indexOf('collections');
+    if (collectionIndex !== -1 && pathParts[collectionIndex + 1]) {
+        return pathParts[collectionIndex + 1].replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    }
+    
+    // Tentar obter do meta tag
+    const titleMeta = document.querySelector('meta[property="og:title"]');
+    if (titleMeta) {
+        return titleMeta.content;
+    }
+    
+    return 'Collection';
+}
+
+// Função para contar produtos em uma coleção
+function getCollectionProductsCount() {
+    // Tentar contar produtos visíveis na página
+    const productItems = document.querySelectorAll('.product-item, .product-card, [data-product-id], .grid-product, .product');
+    if (productItems.length > 0) {
+        return productItems.length;
+    }
+    
+    // Tentar obter do elemento de contagem
+    const countElement = document.querySelector('.collection-count, .products-count, [data-products-count]');
+    if (countElement) {
+        const count = parseInt(countElement.textContent.match(/\d+/)?.[0]);
+        if (!isNaN(count)) return count;
+    }
+    
+    return 1; // Default
+}
+
+// Função para contar resultados de busca
+function getSearchResultsCount() {
+    // Tentar contar resultados visíveis
+    const searchResults = document.querySelectorAll('.search-result, .product-item, .product-card, [data-product-id]');
+    if (searchResults.length > 0) {
+        return searchResults.length;
+    }
+    
+    // Tentar obter do elemento de contagem de resultados
+    const resultsCount = document.querySelector('.search-results-count, .results-count, [data-results-count]');
+    if (resultsCount) {
+        const count = parseInt(resultsCount.textContent.match(/\d+/)?.[0]);
+        if (!isNaN(count)) return count;
+    }
+    
+    // Verificar se há mensagem de "sem resultados"
+    const noResults = document.querySelector('.no-results, .search-no-results');
+    if (noResults) return 0;
+    
+    return 1; // Default
+}
