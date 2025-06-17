@@ -202,7 +202,7 @@ class EventsController extends Controller
                 'ln' => 'nullable|string|max:255',
                 'em' => 'nullable|email|max:255',
                 'ph' => 'nullable|string|max:15',
-                // Novos parâmetros otimizados
+                // Parâmetros otimizados padronizados
                 'app' => 'nullable|string',
                 'language' => 'nullable|string',
                 'referrer_url' => 'nullable|string',
@@ -211,6 +211,11 @@ class EventsController extends Controller
                 'content_name' => 'nullable|array',
                 'num_items' => 'nullable|integer',
                 'search_string' => 'nullable|string',
+                // Novos parâmetros padronizados
+                'timestamp' => 'nullable|integer',
+                'page_url' => 'nullable|string',
+                'page_title' => 'nullable|string',
+                'device_type' => 'nullable|string|in:mobile,desktop',
             ]);
 
             $eventType = $validatedData['eventType'];
@@ -343,6 +348,15 @@ class EventsController extends Controller
                     'content_category' => $validatedData['content_category'] ?? null,
                     'content_name' => $validatedData['content_name'] ?? null,
                     'num_items' => $validatedData['num_items'] ?? null,
+                ],
+                'standardized_params' => [
+                    'app' => $validatedData['app'] ?? null,
+                    'language' => $validatedData['language'] ?? null,
+                    'referrer_url' => $validatedData['referrer_url'] ?? null,
+                    'timestamp' => $validatedData['timestamp'] ?? null,
+                    'page_url' => $validatedData['page_url'] ?? null,
+                    'page_title' => $validatedData['page_title'] ?? null,
+                    'device_type' => $validatedData['device_type'] ?? null,
                 ],
             ];
 

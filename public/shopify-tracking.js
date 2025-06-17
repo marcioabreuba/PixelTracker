@@ -1,8 +1,135 @@
 /**
- * Script de Tracking Duplo do Facebook para Shopify
- * Baseado no padrão otimizado para melhor match quality
+ * Script de Tracking Duplo do Facebook para Shopify - VERSÃO MELHORADA
+ * Melhorias: padronização de parâmetros, performance, validações
  * Integração com API Laravel (server-side) + Pixel Facebook (client-side)
  */
+
+// ===== UTILITÁRIOS DE TRACKING =====
+const TrackingUtils = {
+    // Debug log
+    log(message, data = null) {
+        const debug = window.shopifyFBConfig?.debug || false;
+        if (debug) {
+            console.log(`🔍 FB Tracking: ${message}`, data || '');
+        }
+    },
+
+    // Validar email
+    isValidEmail(email) {
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    },
+
+    // Validar telefone brasileiro
+    isValidBrazilianPhone(phone) {
+        return /^55\d{10,11}$/.test(phone);
+    },
+
+    // Debounce para performance
+    debounce(func, wait) {
+        let timeout;
+        return function executedFunction(...args) {
+            const later = () => {
+                clearTimeout(timeout);
+                func(...args);
+            };
+            clearTimeout(timeout);
+            timeout = setTimeout(later, wait);
+        };
+    },
+
+    // Safe DOM query
+    safeQuery(selector) {
+        try {
+            return document.querySelector(selector);
+        } catch (e) {
+            return null;
+        }
+    },
+
+    // Safe DOM query all
+    safeQueryAll(selector) {
+        try {
+            return document.querySelectorAll(selector);
+        } catch (e) {
+            return [];
+        }
+    },
+
+    // Função para definir cookies
+    setCookie(name, value, days = 365) {
+        const date = new Date();
+        date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+        document.cookie = `${name}=${encodeURIComponent(value)}; expires=${date.toUTCString()}; path=/`;
+    }
+};
+
+// ===== COLETA PADRONIZADA DE DADOS PESSOAIS =====
+const PersonalDataCollector = {
+    // Coletar dados de formulários em TODOS os eventos
+    collectFromForms() {
+        const data = {};
+        
+        // Detectar formulários Shopify
+        const nameField = TrackingUtils.safeQuery('[name="contact[first_name]"], [name="customer[first_name]"], [name="first_name"], [name="nome"], [name="NOME"]');
+        const lastNameField = TrackingUtils.safeQuery('[name="contact[last_name]"], [name="customer[last_name]"], [name="last_name"], [name="sobrenome"], [name="SOBRENOME"]');
+        const emailField = TrackingUtils.safeQuery('[name="contact[email]"], [name="customer[email]"], [name="email"], [name="EMAIL"]');
+        const phoneField = TrackingUtils.safeQuery('[name="contact[phone]"], [name="customer[phone]"], [name="phone"], [name="telefone"], [name="TELEFONE"]');
+
+        if (nameField?.value) {
+            data.fn = nameField.value.trim().toLowerCase();
+        }
+        
+        if (lastNameField?.value) {
+            data.ln = lastNameField.value.trim().toLowerCase();
+        } else if (nameField?.value) {
+            const nameParts = nameField.value.trim().split(' ');
+            data.fn = nameParts[0].toLowerCase();
+            if (nameParts.length > 1) {
+                data.ln = nameParts[nameParts.length - 1].toLowerCase();
+            }
+        }
+
+        if (emailField?.value && TrackingUtils.isValidEmail(emailField.value)) {
+            data.em = emailField.value.trim().toLowerCase();
+        }
+
+        if (phoneField?.value) {
+            let phone = phoneField.value.replace(/\s|-|\(|\)/g, '');
+            if (phone && !phone.startsWith('55')) {
+                phone = '55' + phone;
+            }
+            if (TrackingUtils.isValidBrazilianPhone(phone)) {
+                data.ph = phone;
+            }
+        }
+
+        // Salvar nos cookies para próximos eventos
+        Object.keys(data).forEach(key => {
+            if (data[key]) {
+                TrackingUtils.setCookie(key, data[key]);
+            }
+        });
+
+        return data;
+    },
+
+    // Obter dados salvos dos cookies
+    getSavedData() {
+        const data = {};
+        ['fn', 'ln', 'em', 'ph'].forEach(key => {
+            const value = getCookie(key);
+            if (value) data[key] = decodeURIComponent(value);
+        });
+        return data;
+    },
+
+    // Merge de dados atuais + salvos
+    getAllPersonalData() {
+        const savedData = this.getSavedData();
+        const formData = this.collectFromForms();
+        return { ...savedData, ...formData };
+    }
+};
 
 // Função para obter cookies
 function getCookie(name) {
@@ -25,95 +152,60 @@ function generateUUID() {
     });
 }
 
-// Função principal para enviar eventos
+// Função principal para enviar eventos - VERSÃO MELHORADA
 async function sendEvent(eventType, data = {}) {
     const contentId = window.shopifyFBConfig?.contentId || 'shopify_store';
     const apiUrl = window.shopifyFBConfig?.apiUrl || 'https://traqueamentophp.onrender.com';
     const event_source_url = window.location.href;
     const _fbc = getCookie('_fbc') || '';
     const _fbp = getCookie('_fbp') || '';
-    const userId = getCookie('userId') || '';
-    let fn = getCookie("fn");
-    let ln = getCookie("ln");
-    let em = getCookie("em");
-    let ph = getCookie("ph");
-
-    // Coleta automática de dados de formulários para eventos específicos
-    if (eventType === "Lead" || eventType === "InitiateCheckout") {
-        // Detectar formulários Shopify automaticamente
-        const nameField = document.querySelector('[name="contact[first_name]"], [name="customer[first_name]"], [name="first_name"], [name="nome"], [name="NOME"]');
-        const lastNameField = document.querySelector('[name="contact[last_name]"], [name="customer[last_name]"], [name="last_name"], [name="sobrenome"], [name="SOBRENOME"]');
-        const emailField = document.querySelector('[name="contact[email]"], [name="customer[email]"], [name="email"], [name="EMAIL"]');
-        const phoneField = document.querySelector('[name="contact[phone]"], [name="customer[phone]"], [name="phone"], [name="telefone"], [name="TELEFONE"]');
-
-        if (nameField && nameField.value) {
-            fn = nameField.value.trim().toLowerCase();
-        }
-        
-        if (lastNameField && lastNameField.value) {
-            ln = lastNameField.value.trim().toLowerCase();
-        } else if (nameField && nameField.value) {
-            // Se não há campo de sobrenome, dividir o nome completo
-            const nameParts = nameField.value.trim().split(' ');
-            fn = nameParts[0].toLowerCase();
-            if (nameParts.length > 1) {
-                ln = nameParts[nameParts.length - 1].toLowerCase();
-            }
-        }
-
-        if (emailField && emailField.value) {
-            em = emailField.value.trim().toLowerCase();
-        }
-
-        if (phoneField && phoneField.value) {
-            ph = phoneField.value.replace(/\s|-|\(|\)/g, '');
-            // Adicionar código do país se não tiver
-            if (ph && !ph.startsWith('55')) {
-                ph = '55' + ph;
-            }
-        }
-
-        // Armazenar os dados nos cookies
-        const date = new Date();
-        date.setFullYear(date.getFullYear() + 1); // Expira em 1 ano
-        if (fn) document.cookie = `fn=${encodeURIComponent(fn)}; expires=${date.toUTCString()}; path=/`;
-        if (ln) document.cookie = `ln=${encodeURIComponent(ln)}; expires=${date.toUTCString()}; path=/`;
-        if (em) document.cookie = `em=${em}; expires=${date.toUTCString()}; path=/`;
-        if (ph) document.cookie = `ph=${encodeURIComponent(ph)}; expires=${date.toUTCString()}; path=/`;
+    let userId = getCookie('userId');
+    
+    // Gerar userId se não existir
+    if (!userId) {
+        userId = generateUUID();
+        TrackingUtils.setCookie('userId', userId);
     }
+
+    // COLETA PADRONIZADA DE DADOS PESSOAIS PARA TODOS OS EVENTOS
+    const personalData = PersonalDataCollector.getAllPersonalData();
+    
+    TrackingUtils.log(`Coletando evento ${eventType}`, { eventType, personalData, data });
 
     try {
         // Obter dados do produto/página atual para todos os eventos
         const currentPageData = getCurrentPageData();
         
-        // Preparar parâmetros otimizados para ambos (API e Pixel) - TODOS OS EVENTOS
-        const optimizedParams = {
-            app: 'Pixel Tracker',
-            language: 'pt-BR',
-            referrer_url: document.referrer || '',
-            content_type: currentPageData.content_type,
-            content_category: currentPageData.content_category,
-            content_name: currentPageData.content_name,
-            num_items: currentPageData.num_items
-        };
-
-        // Preparar payload para API (incluindo parâmetros otimizados)
-        const payload = { 
+        // PARÂMETROS PADRONIZADOS PARA TODOS OS EVENTOS
+        const standardParams = {
+            // Identidade
             contentId, 
             eventType, 
             event_source_url, 
             _fbc, 
             _fbp, 
             userId,
-            ...data,
-            ...optimizedParams
+            // Dados pessoais (sempre incluídos quando disponíveis)
+            ...personalData,
+            // Parâmetros otimizados
+            app: 'Pixel Tracker Enhanced',
+            language: 'pt-BR',
+            referrer_url: document.referrer || '',
+            // Dados da página/produto
+            content_type: currentPageData.content_type,
+            content_category: currentPageData.content_category,
+            content_name: currentPageData.content_name,
+            num_items: currentPageData.num_items,
+            // Dados adicionais padronizados
+            timestamp: Date.now(),
+            page_url: window.location.href,
+            page_title: document.title,
+            device_type: /Mobile|Android|iPhone|iPad/.test(navigator.userAgent) ? 'mobile' : 'desktop',
+            // Dados específicos do evento
+            ...data
         };
-        
-        // Adicionar dados pessoais se disponíveis
-        if (fn) payload.fn = fn;
-        if (ln) payload.ln = ln;
-        if (em) payload.em = em;
-        if (ph) payload.ph = ph;
+
+        TrackingUtils.log(`Parâmetros padronizados para ${eventType}`, standardParams);
 
         // Enviar para API (server-side)
         const response = await fetch(`${apiUrl}/events/send`, {
@@ -123,34 +215,44 @@ async function sendEvent(eventType, data = {}) {
                 'Content-Type': 'application/json',
                 'X-Requested-With': 'XMLHttpRequest'
             },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(standardParams)
         });
 
+        if (!response.ok) {
+            throw new Error(`API Error: ${response.status} ${response.statusText}`);
+        }
+
         const responseData = await response.json();
-        console.log(`✅ Evento ${eventType} enviado para API (server-side)`);
+        TrackingUtils.log(`Evento ${eventType} enviado para API`, responseData);
+        console.log(`✅ Evento ${eventType} enviado para API (server-side) - EventID: ${responseData.eventID}`);
 
         // Se for evento Init, apenas retornar os dados
         if (eventType === "Init") {
             return responseData;
         }
 
-        // Enviar para Facebook Pixel (client-side) com eventID compartilhado
+        // Enviar para Facebook Pixel (client-side) com MESMOS DADOS e eventID compartilhado
         if (typeof fbq !== 'undefined' && responseData.eventID) {
             const customEvents = ['Scroll_25', 'Scroll_50', 'Scroll_75', 'Scroll_90', 'Timer_1min', 'PlayVideo', 'ViewVideo_25', 'ViewVideo_50', 'ViewVideo_75', 'ViewVideo_90'];
             
-            // Preparar dados para o pixel (reutilizando parâmetros otimizados)
+            // USAR OS MESMOS DADOS PADRONIZADOS para garantir consistência
             const pixelData = {
-                ...optimizedParams
+                content_type: standardParams.content_type,
+                content_category: standardParams.content_category,
+                content_name: standardParams.content_name,
+                num_items: standardParams.num_items,
+                language: standardParams.language,
+                device_type: standardParams.device_type
             };
             
             // Adicionar dados específicos do pixel
             if (data.content_ids) pixelData.content_ids = data.content_ids;
             if (data.value) pixelData.value = data.value;
             if (data.currency) pixelData.currency = data.currency;
+            if (data.search_string) pixelData.search_string = data.search_string;
             
             // OTIMIZAÇÃO PARA CATÁLOGO: Usar IDs reais dos produtos
             if (!pixelData.content_ids) {
-                // Tentar obter content_ids reais dos produtos
                 const realProductIds = getRealProductIds();
                 if (realProductIds.length > 0) {
                     pixelData.content_ids = realProductIds;
@@ -159,12 +261,14 @@ async function sendEvent(eventType, data = {}) {
                 }
             }
 
+            // Enviar para o pixel com dados padronizados
             if (customEvents.includes(eventType)) {
                 fbq('trackCustom', eventType, pixelData, { eventID: responseData.eventID });
             } else {
                 fbq('track', eventType, pixelData, { eventID: responseData.eventID });
             }
             
+            TrackingUtils.log(`Pixel ${eventType}`, pixelData);
             console.log(`✅ Evento ${eventType} enviado para Pixel (client-side) com eventID: ${responseData.eventID}`);
             console.log(`📦 Content IDs: ${JSON.stringify(pixelData.content_ids)}`);
         }
@@ -172,6 +276,26 @@ async function sendEvent(eventType, data = {}) {
         return responseData;
     } catch (error) {
         console.error(`❌ Erro ao rastrear evento ${eventType}:`, error);
+        TrackingUtils.log(`Erro ${eventType}`, error);
+        
+        // Fallback: tentar enviar apenas para o pixel em caso de erro
+        if (typeof fbq !== 'undefined' && eventType !== 'Init') {
+            const fallbackData = { 
+                error_fallback: true,
+                content_type: currentPageData.content_type || 'page'
+            };
+            
+            const customEvents = ['Scroll_25', 'Scroll_50', 'Scroll_75', 'Scroll_90', 'Timer_1min', 'PlayVideo', 'ViewVideo_25', 'ViewVideo_50', 'ViewVideo_75', 'ViewVideo_90'];
+            
+            if (customEvents.includes(eventType)) {
+                fbq('trackCustom', eventType, fallbackData);
+            } else {
+                fbq('track', eventType, fallbackData);
+            }
+            console.log(`🔄 Evento ${eventType} enviado apenas para Pixel (fallback)`);
+        }
+        
+        throw error; // Re-throw para debugging
     }
 }
 
@@ -241,62 +365,93 @@ async function initPixel() {
 
 // Configurar eventos automáticos do Shopify
 function setupShopifyEvents() {
+    TrackingUtils.log('Configurando detectores de eventos Shopify...');
+    
     // Detectar e enviar eventos automaticamente baseado na página atual
     detectAndSendPageEvents();
     
-    // Detectar AddToCart
-    document.addEventListener('click', (e) => {
-        const button = e.target.closest('[name="add"], .btn-product-form, .product-form__cart-submit, .product-form__buttons button[type="submit"]');
+    // Detectar AddToCart com debouncing
+    const addToCartHandler = TrackingUtils.debounce((e) => {
+        const button = e.target.closest('[name="add"], .btn-product-form, .product-form__cart-submit, .product-form__buttons button[type="submit"], .btn--add-to-cart');
         if (button) {
+            TrackingUtils.log('AddToCart detectado');
             setTimeout(() => {
                 const productData = getShopifyProductData();
                 sendEvent('AddToCart', productData);
             }, 100);
         }
-    });
+    }, 100);
 
-    // Detectar ViewCart (quando vai para página do carrinho)
-    document.addEventListener('click', (e) => {
-        const cartButton = e.target.closest('[href*="/cart"], .cart-link, .header-cart');
+    // Detectar ViewCart com debouncing
+    const cartHandler = TrackingUtils.debounce((e) => {
+        const cartButton = e.target.closest('[href*="/cart"], .cart-link, .header-cart, .cart-icon');
         if (cartButton) {
-            setTimeout(() => {
-                sendEvent('ViewCart');
-            }, 500);
+            TrackingUtils.log('ViewCart detectado');
+            setTimeout(() => sendEvent('ViewCart'), 500);
         }
-    });
+    }, 200);
+
+    // Detectar InitiateCheckout
+    const checkoutHandler = (e) => {
+        const checkoutButton = e.target.closest('.cart__checkout-button, [name="goto_checkout"], .btn--checkout, [href*="checkout"]');
+        if (checkoutButton) {
+            TrackingUtils.log('InitiateCheckout detectado');
+            sendEvent('InitiateCheckout');
+        }
+    };
+
+    // Event listeners com melhor performance
+    if (document.body) {
+        document.addEventListener('click', addToCartHandler, { passive: true });
+        document.addEventListener('click', cartHandler, { passive: true }); 
+        document.addEventListener('click', checkoutHandler, { passive: true });
+    } else {
+        document.addEventListener('DOMContentLoaded', () => {
+            document.addEventListener('click', addToCartHandler, { passive: true });
+            document.addEventListener('click', cartHandler, { passive: true });
+            document.addEventListener('click', checkoutHandler, { passive: true });
+        });
+    }
 
     // Detectar Search (formulários de busca)
-    document.addEventListener('submit', (e) => {
+    const searchHandler = (e) => {
         const searchForm = e.target;
         if (searchForm.matches('form[action*="/search"], .search-form, form[role="search"]')) {
             setTimeout(() => {
                 const searchQuery = searchForm.querySelector('input[name="q"], input[name="query"], input[type="search"]');
                 const searchData = searchQuery ? { search_string: searchQuery.value } : {};
+                TrackingUtils.log('Search detectado', searchData);
                 sendEvent('Search', searchData);
             }, 100);
         }
-    });
+    };
 
     // Detectar formulários de contato/newsletter (Lead)
-    document.addEventListener('submit', (e) => {
+    const formHandler = (e) => {
         const form = e.target;
         if (form.matches('.contact-form, .newsletter-form, form[action*="contact"], form[action*="newsletter"]')) {
+            TrackingUtils.log('Lead detectado');
             setTimeout(() => sendEvent('Lead'), 100);
         }
-    });
+    };
 
-    // Detectar InitiateCheckout
-    document.addEventListener('click', (e) => {
-        const checkoutButton = e.target.closest('.cart__checkout-button, [name="goto_checkout"], .btn--checkout, [href*="checkout"]');
-        if (checkoutButton) {
-            sendEvent('InitiateCheckout');
-        }
-    });
+    // Form listeners
+    if (document.body) {
+        document.addEventListener('submit', searchHandler);
+        document.addEventListener('submit', formHandler);
+    } else {
+        document.addEventListener('DOMContentLoaded', () => {
+            document.addEventListener('submit', searchHandler);
+            document.addEventListener('submit', formHandler);
+        });
+    }
 
-    // Tracking de scroll, tempo e vídeos
+    // Tracking de scroll, tempo e vídeos com melhorias
     setupScrollTracking();
     setupTimeTracking();
     setupVideoTracking();
+    
+    TrackingUtils.log('✅ Todos os detectores de eventos configurados');
 }
 
 // Função para detectar e enviar eventos baseados na página atual
@@ -598,62 +753,92 @@ function getCartItemsCount() {
     return 1; // Default
 }
 
-// Configurar tracking de scroll
+// Configurar tracking de scroll - VERSÃO MELHORADA
 function setupScrollTracking() {
-    let scrollTracker = {
-        25: false,
-        50: false,
-        75: false,
-        90: false
-    };
-
-    window.addEventListener('scroll', () => {
+    let scrollTracker = { 25: false, 50: false, 75: false, 90: false };
+    
+    const handleScroll = TrackingUtils.debounce(() => {
         const scrollPercent = (window.scrollY / (document.documentElement.scrollHeight - window.innerHeight)) * 100;
         
         Object.keys(scrollTracker).forEach(threshold => {
             if (scrollPercent >= threshold && !scrollTracker[threshold]) {
                 scrollTracker[threshold] = true;
+                TrackingUtils.log(`Scroll ${threshold}% detectado`);
                 sendEvent(`Scroll_${threshold}`);
             }
         });
-    });
+    }, 100);
+
+    if (window) {
+        window.addEventListener('scroll', handleScroll, { passive: true });
+        TrackingUtils.log('✅ Scroll tracking configurado');
+    }
 }
 
-// Configurar tracking de tempo
+// Configurar tracking de tempo - VERSÃO MELHORADA
 function setupTimeTracking() {
-    setTimeout(() => {
-        sendEvent('Timer_1min');
-    }, 60000); // 1 minuto
+    const timeTracker = {
+        '1min': 60000
+    };
+
+    Object.entries(timeTracker).forEach(([label, time]) => {
+        setTimeout(() => {
+            TrackingUtils.log(`Timer ${label} atingido`);
+            sendEvent(`Timer_${label}`);
+        }, time);
+    });
+    
+    TrackingUtils.log('✅ Time tracking configurado');
 }
 
-// Configurar tracking de vídeos
+// Configurar tracking de vídeos - VERSÃO MELHORADA
 function setupVideoTracking() {
-    document.addEventListener('DOMContentLoaded', () => {
-        const videos = document.querySelectorAll('video');
+    const setupVideoEvents = () => {
+        const videos = TrackingUtils.safeQueryAll('video, iframe[src*="youtube"], iframe[src*="vimeo"]');
+        
         videos.forEach(video => {
-            let videoEvents = {
-                25: false,
-                50: false,
-                75: false,
-                90: false
-            };
-            
-            video.addEventListener('play', () => {
-                sendEvent('PlayVideo');
-            });
-            
-            video.addEventListener('timeupdate', () => {
+            if (video.tagName === 'VIDEO') {
+                setupNativeVideoEvents(video);
+            } else {
+                // Para iframes de YouTube/Vimeo
+                video.addEventListener('load', () => {
+                    TrackingUtils.log('Video iframe carregado');
+                    sendEvent('PlayVideo');
+                });
+            }
+        });
+        
+        TrackingUtils.log(`✅ Video tracking configurado para ${videos.length} vídeos`);
+    };
+
+    const setupNativeVideoEvents = (video) => {
+        let videoEvents = { 25: false, 50: false, 75: false, 90: false };
+        
+        video.addEventListener('play', () => {
+            TrackingUtils.log('Video play detectado');
+            sendEvent('PlayVideo');
+        });
+        
+        video.addEventListener('timeupdate', TrackingUtils.debounce(() => {
+            if (video.duration > 0) {
                 const percent = Math.round((video.currentTime / video.duration) * 100);
                 
                 Object.keys(videoEvents).forEach(threshold => {
                     if (percent >= parseInt(threshold) && !videoEvents[threshold]) {
                         videoEvents[threshold] = true;
+                        TrackingUtils.log(`Video ${threshold}% detectado`);
                         sendEvent(`ViewVideo_${threshold}`);
                     }
                 });
-            });
-        });
-    });
+            }
+        }, 200));
+    };
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', setupVideoEvents);
+    } else {
+        setupVideoEvents();
+    }
 }
 
 // Função pública para tracking manual de Purchase
@@ -668,11 +853,12 @@ window.trackShopifyPurchase = function(orderData) {
     sendEvent('Purchase', purchaseData);
 };
 
-// Inicialização automática
+// Inicialização automática - VERSÃO MELHORADA
 document.addEventListener('DOMContentLoaded', () => {
     // Verificar se a configuração está disponível
     if (window.shopifyFBConfig) {
-        console.log('🚀 Iniciando Shopify Facebook Tracking Duplo...');
+        console.log('🚀 Iniciando Shopify Facebook Tracking Duplo - VERSÃO MELHORADA...');
+        TrackingUtils.log('Configuração detectada', window.shopifyFBConfig);
         
         // Inicializar pixel
         initPixel();
@@ -683,15 +869,21 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('✅ Shopify Facebook Tracking Duplo inicializado!');
         console.log('📊 Server-side: API Laravel');
         console.log('🌐 Client-side: Facebook Pixel');
-        console.log('🎯 Match Quality: Otimizado com dados pessoais');
+        console.log('🎯 Match Quality: MAXIMIZADO com dados padronizados');
+        console.log('⚡ Performance: Otimizada com debouncing e passive listeners');
+        console.log('🛠️ Debug: Ative debug=true na config para logs detalhados');
+        
+        TrackingUtils.log('✅ Sistema completamente inicializado');
     } else {
         console.warn('⚠️ shopifyFBConfig não encontrado. Configure window.shopifyFBConfig antes de carregar este script.');
     }
 });
 
-// Expor funções globalmente para uso manual
+// Expor funções globalmente para uso manual e debugging
 window.sendEvent = sendEvent;
 window.initPixel = initPixel;
+window.TrackingUtils = TrackingUtils;
+window.PersonalDataCollector = PersonalDataCollector;
 
 // Função para obter nome da coleção atual
 function getCollectionName() {
