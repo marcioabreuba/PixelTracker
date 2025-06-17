@@ -134,6 +134,34 @@ async function sendEvent(eventType, data = {}) {
                 pixelData.content_ids = [contentId];
             }
 
+            // Adicionar parâmetros otimizados para melhor segmentação
+            pixelData.language = 'pt-BR';
+            pixelData.referrer_url = document.referrer || '';
+            pixelData.app = 'Pixel Tracker';
+            
+            // Parâmetros específicos por tipo de evento
+            if (eventType === 'ViewContent' || eventType === 'AddToCart') {
+                pixelData.content_type = 'product';
+                pixelData.content_category = getProductCategory();
+                pixelData.content_name = getProductName();
+                pixelData.num_items = 1;
+            } else if (eventType === 'PageView') {
+                pixelData.content_type = getPageType();
+                pixelData.content_category = getPageCategory();
+                pixelData.content_name = getPageName();
+                pixelData.num_items = 1;
+            } else if (eventType === 'InitiateCheckout') {
+                pixelData.content_type = 'checkout';
+                pixelData.content_category = ['Checkout'];
+                pixelData.content_name = ['Checkout Process'];
+                pixelData.num_items = getCartItemsCount();
+            } else if (eventType === 'Lead') {
+                pixelData.content_type = 'lead_form';
+                pixelData.content_category = ['Lead Generation'];
+                pixelData.content_name = ['Contact Form'];
+                pixelData.num_items = 1;
+            }
+
             if (customEvents.includes(eventType)) {
                 fbq('trackCustom', eventType, pixelData, { eventID: responseData.eventID });
             } else {
@@ -285,6 +313,117 @@ function getShopifyProductData() {
     }
 
     return productData;
+}
+
+// Funções auxiliares para parâmetros otimizados
+function getProductCategory() {
+    // Tentar obter categoria do produto de várias fontes
+    const breadcrumb = document.querySelector('.breadcrumb, .breadcrumbs');
+    if (breadcrumb) {
+        const links = breadcrumb.querySelectorAll('a');
+        if (links.length > 1) {
+            return [links[links.length - 2].textContent.trim()];
+        }
+    }
+    
+    // Tentar obter do meta tag
+    const categoryMeta = document.querySelector('meta[property="product:category"]');
+    if (categoryMeta) {
+        return [categoryMeta.content];
+    }
+    
+    // Tentar obter da URL
+    const pathParts = window.location.pathname.split('/');
+    if (pathParts.includes('collections') && pathParts.length > 2) {
+        const collectionIndex = pathParts.indexOf('collections');
+        if (pathParts[collectionIndex + 1]) {
+            return [pathParts[collectionIndex + 1].replace(/-/g, ' ')];
+        }
+    }
+    
+    return ['General'];
+}
+
+function getProductName() {
+    // Tentar obter nome do produto
+    const productTitle = document.querySelector('h1.product-title, .product-title h1, h1[class*="product"], .product-meta h1');
+    if (productTitle) {
+        return [productTitle.textContent.trim()];
+    }
+    
+    // Tentar obter do meta tag
+    const titleMeta = document.querySelector('meta[property="og:title"]');
+    if (titleMeta) {
+        return [titleMeta.content];
+    }
+    
+    return [document.title];
+}
+
+function getPageType() {
+    const path = window.location.pathname;
+    
+    if (path.includes('/products/')) return 'product';
+    if (path.includes('/collections/')) return 'category';
+    if (path.includes('/cart')) return 'cart';
+    if (path.includes('/checkout')) return 'checkout';
+    if (path.includes('/contact')) return 'contact';
+    if (path === '/' || path === '') return 'home';
+    
+    return 'page';
+}
+
+function getPageCategory() {
+    const pageType = getPageType();
+    
+    switch (pageType) {
+        case 'product': return ['Product'];
+        case 'category': return ['Category'];
+        case 'cart': return ['Cart'];
+        case 'checkout': return ['Checkout'];
+        case 'contact': return ['Contact'];
+        case 'home': return ['Home'];
+        default: return ['Page'];
+    }
+}
+
+function getPageName() {
+    const pageType = getPageType();
+    
+    if (pageType === 'product') {
+        return getProductName();
+    }
+    
+    if (pageType === 'category') {
+        const pathParts = window.location.pathname.split('/');
+        const collectionIndex = pathParts.indexOf('collections');
+        if (collectionIndex !== -1 && pathParts[collectionIndex + 1]) {
+            return [pathParts[collectionIndex + 1].replace(/-/g, ' ')];
+        }
+    }
+    
+    if (pageType === 'home') {
+        return ['Home Page'];
+    }
+    
+    return [document.title];
+}
+
+function getCartItemsCount() {
+    // Tentar obter quantidade de itens no carrinho
+    const cartCount = document.querySelector('.cart-count, [data-cart-count], .cart-item-count');
+    if (cartCount) {
+        const count = parseInt(cartCount.textContent || cartCount.dataset.cartCount);
+        if (!isNaN(count)) return count;
+    }
+    
+    // Tentar contar itens no carrinho
+    const cartItems = document.querySelectorAll('.cart-item, [data-cart-item]');
+    if (cartItems.length > 0) {
+        return cartItems.length;
+    }
+    
+    return 1; // Default
 }
 
 // Configurar tracking de scroll
