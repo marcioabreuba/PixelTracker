@@ -176,17 +176,37 @@ async function sendEvent(eventType, data = {}) {
         // Obter dados do produto/página atual para todos os eventos
         const currentPageData = getCurrentPageData();
         
-        // DETERMINAR CONTENT_IDS CORRETOS
+        // DETERMINAR CONTENT_IDS CORRETOS baseado no tipo de evento e página
         let finalContentIds = data.content_ids || [];
         
-        // Se não há content_ids específicos, usar getRealProductIds
+        // Se não há content_ids específicos, determinar baseado no contexto
         if (!finalContentIds || finalContentIds.length === 0) {
-            const realProductIds = getRealProductIds();
-            if (realProductIds.length > 0) {
-                finalContentIds = realProductIds;
-                TrackingUtils.log(`Content IDs via getRealProductIds para ${eventType}`, realProductIds);
-            } else {
-                finalContentIds = [contentId]; // Fallback para contentId do domínio
+            // Para páginas de produto, usar apenas o variant ID específico
+            if (window.location.pathname.includes('/products/')) {
+                const specificVariantId = getCurrentProductVariantId();
+                if (specificVariantId) {
+                    finalContentIds = [specificVariantId];
+                    TrackingUtils.log(`Content ID específico da variante para ${eventType}`, specificVariantId);
+                } else {
+                    // Fallback para product handle da URL
+                    const pathMatch = window.location.pathname.match(/\/products\/([^\/\?]+)/);
+                    if (pathMatch && pathMatch[1]) {
+                        finalContentIds = [pathMatch[1]];
+                        TrackingUtils.log(`Content ID do product handle para ${eventType}`, pathMatch[1]);
+                    } else {
+                        finalContentIds = [contentId];
+                    }
+                }
+            }
+            // Para outras páginas, usar múltiplos IDs conforme necessário
+            else {
+                const realProductIds = getRealProductIds();
+                if (realProductIds.length > 0) {
+                    finalContentIds = realProductIds;
+                    TrackingUtils.log(`Content IDs múltiplos para ${eventType}`, realProductIds);
+                } else {
+                    finalContentIds = [contentId]; // Fallback para contentId do domínio
+                }
             }
         } else {
             TrackingUtils.log(`Content IDs específicos para ${eventType}`, finalContentIds);
@@ -230,12 +250,12 @@ async function sendEvent(eventType, data = {}) {
 
         // Enviar para API (server-side)
         const response = await fetch(`${apiUrl}/events/send`, {
-            method: 'POST',
+                method: 'POST',
             credentials: 'include',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest'
-            },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
             body: JSON.stringify(standardParams)
         });
 
@@ -286,7 +306,7 @@ async function sendEvent(eventType, data = {}) {
         }
 
         return responseData;
-    } catch (error) {
+        } catch (error) {
         console.error(`❌ Erro ao rastrear evento ${eventType}:`, error);
         TrackingUtils.log(`Erro ${eventType}`, error);
         
@@ -385,7 +405,7 @@ function setupShopifyEvents() {
     // Detectar AddToCart com debouncing
     const addToCartHandler = TrackingUtils.debounce((e) => {
         const button = e.target.closest('[name="add"], .btn-product-form, .product-form__cart-submit, .product-form__buttons button[type="submit"], .btn--add-to-cart');
-        if (button) {
+            if (button) {
             TrackingUtils.log('AddToCart detectado');
             setTimeout(() => {
                 const productData = getShopifyProductData();
@@ -810,6 +830,61 @@ function getCurrentPageData() {
     }
 }
 
+// Função para obter apenas o variant ID específico da página de produto atual
+function getCurrentProductVariantId() {
+    // 1. Prioridade: Variant ID do form de adicionar ao carrinho
+    const productForm = TrackingUtils.safeQuery('form[action*="/cart/add"]');
+    if (productForm) {
+        const variantInput = productForm.querySelector('[name="id"]');
+        if (variantInput && variantInput.value) {
+            TrackingUtils.log('Variant ID atual do form', variantInput.value);
+            return variantInput.value;
+        }
+    }
+    
+    // 2. Variant ID de elementos com data-variant-id visíveis
+    const variantElement = TrackingUtils.safeQuery('[data-variant-id]:not([style*="display: none"])');
+    if (variantElement && variantElement.dataset.variantId) {
+        TrackingUtils.log('Variant ID atual de elemento', variantElement.dataset.variantId);
+        return variantElement.dataset.variantId;
+    }
+    
+    // 3. Tentar obter de variáveis Shopify globais
+    if (typeof window.ShopifyAnalytics !== 'undefined' && window.ShopifyAnalytics.meta) {
+        const meta = window.ShopifyAnalytics.meta;
+        if (meta.product && meta.product.variants && meta.product.variants.length > 0) {
+            // Pegar primeira variante como padrão
+            const variantId = meta.product.variants[0].id.toString();
+            TrackingUtils.log('Variant ID de ShopifyAnalytics', variantId);
+            return variantId;
+        }
+    }
+    
+    // 4. Tentar obter de meta tags específicas
+    const variantMeta = TrackingUtils.safeQuery('meta[name="shopify-variant-id"]');
+    if (variantMeta && variantMeta.content) {
+        TrackingUtils.log('Variant ID de meta tag', variantMeta.content);
+        return variantMeta.content;
+    }
+    
+    // 5. Fallback: tentar extrair de dados estruturados
+    const jsonLdScripts = TrackingUtils.safeQueryAll('script[type="application/ld+json"]');
+    for (const script of jsonLdScripts) {
+        try {
+            const data = JSON.parse(script.textContent);
+            if (data['@type'] === 'Product' && data.sku) {
+                TrackingUtils.log('Variant ID de JSON-LD', data.sku);
+                return data.sku;
+            }
+        } catch (e) {
+            // Continuar tentando outros scripts
+        }
+    }
+    
+    TrackingUtils.log('Nenhum variant ID específico encontrado');
+    return null;
+}
+
 // Função melhorada para obter IDs reais dos produtos (otimização para catálogo)
 function getRealProductIds() {
     const productIds = [];
@@ -1150,7 +1225,7 @@ window.trackShopifyPurchase = function(orderData) {
 // Inicialização automática - VERSÃO MELHORADA
 document.addEventListener('DOMContentLoaded', () => {
     // Verificar se a configuração está disponível
-    if (window.shopifyFBConfig) {
+if (window.shopifyFBConfig) {
         console.log('🚀 Iniciando Shopify Facebook Tracking Duplo - VERSÃO MELHORADA...');
         TrackingUtils.log('Configuração detectada', window.shopifyFBConfig);
         
@@ -1250,4 +1325,4 @@ function getSearchResultsCount() {
     if (noResults) return 0;
     
     return 1; // Default
-}
+} 
