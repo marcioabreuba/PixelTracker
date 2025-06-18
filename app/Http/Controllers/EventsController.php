@@ -390,7 +390,15 @@ class EventsController extends Controller
             ];
 
             $event->setUserData($advancedMatching);
-            ConversionsApi::addEvent($event)->sendEvents();
+            
+            // ENVIO PARA FACEBOOK CONVERSIONS API (SERVER-SIDE)
+            try {
+                ConversionsApi::addEvent($event)->sendEvents();
+                Log::channel('Events')->info("✅ SERVER-SIDE ENVIADO: " . $eventType . " - EventID: " . $event->getEventId());
+            } catch (\Exception $apiError) {
+                Log::error("❌ ERRO SERVER-SIDE: " . $eventType . " - " . $apiError->getMessage());
+                throw $apiError;
+            }
 
             Log::channel('Events')->info(json_encode($log, JSON_PRETTY_PRINT));
 

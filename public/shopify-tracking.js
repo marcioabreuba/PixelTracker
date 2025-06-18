@@ -299,38 +299,41 @@ async function sendEvent(eventType, data = {}) {
             return responseData;
         }
 
-        // Enviar para Facebook Pixel (client-side) com MESMOS DADOS e eventID compartilhado
-        if (typeof fbq !== 'undefined' && responseData.eventID) {
-            const customEvents = ['Scroll_25', 'Scroll_50', 'Scroll_75', 'Scroll_90', 'Timer_1min', 'PlayVideo', 'ViewVideo_25', 'ViewVideo_50', 'ViewVideo_75', 'ViewVideo_90'];
-            
-            // USAR OS MESMOS DADOS PADRONIZADOS para garantir consistência
-            const pixelData = {
-                content_type: standardParams.content_type,
-                content_category: standardParams.content_category,
-                content_name: standardParams.content_name,
-                num_items: standardParams.num_items,
-                language: standardParams.language,
-                device_type: standardParams.device_type,
-                // USAR OS MESMOS CONTENT_IDS do backend
-                content_ids: standardParams.content_ids
-            };
-            
-            // Adicionar outros dados específicos do pixel
-            if (standardParams.value) pixelData.value = standardParams.value;
-            if (standardParams.currency) pixelData.currency = standardParams.currency;
-            if (data.search_string) pixelData.search_string = data.search_string;
+        // DELAY ESTRATÉGICO: Aguardar para garantir que server-side chegue primeiro
+        setTimeout(() => {
+            // Enviar para Facebook Pixel (client-side) com MESMOS DADOS e eventID compartilhado
+            if (typeof fbq !== 'undefined' && responseData.eventID) {
+                const customEvents = ['Scroll_25', 'Scroll_50', 'Scroll_75', 'Scroll_90', 'Timer_1min', 'PlayVideo', 'ViewVideo_25', 'ViewVideo_50', 'ViewVideo_75', 'ViewVideo_90'];
+                
+                // USAR OS MESMOS DADOS PADRONIZADOS para garantir consistência
+                const pixelData = {
+                    content_type: standardParams.content_type,
+                    content_category: standardParams.content_category,
+                    content_name: standardParams.content_name,
+                    num_items: standardParams.num_items,
+                    language: standardParams.language,
+                    device_type: standardParams.device_type,
+                    // USAR OS MESMOS CONTENT_IDS do backend
+                    content_ids: standardParams.content_ids
+                };
+                
+                // Adicionar outros dados específicos do pixel
+                if (standardParams.value) pixelData.value = standardParams.value;
+                if (standardParams.currency) pixelData.currency = standardParams.currency;
+                if (data.search_string) pixelData.search_string = data.search_string;
 
-            // Enviar para o pixel com dados padronizados
-            if (customEvents.includes(eventType)) {
-                fbq('trackCustom', eventType, pixelData, { eventID: responseData.eventID });
-            } else {
-                fbq('track', eventType, pixelData, { eventID: responseData.eventID });
+                // Enviar para o pixel com dados padronizados
+                if (customEvents.includes(eventType)) {
+                    fbq('trackCustom', eventType, pixelData, { eventID: responseData.eventID });
+                } else {
+                    fbq('track', eventType, pixelData, { eventID: responseData.eventID });
+                }
+                
+                TrackingUtils.log(`Pixel ${eventType}`, pixelData);
+                console.log(`✅ Evento ${eventType} enviado para Pixel (client-side) com eventID: ${responseData.eventID}`);
+                console.log(`📦 Content IDs: ${JSON.stringify(pixelData.content_ids)}`);
             }
-            
-            TrackingUtils.log(`Pixel ${eventType}`, pixelData);
-            console.log(`✅ Evento ${eventType} enviado para Pixel (client-side) com eventID: ${responseData.eventID}`);
-            console.log(`📦 Content IDs: ${JSON.stringify(pixelData.content_ids)}`);
-        }
+        }, 200); // 200ms delay para server-side processar primeiro
 
         return responseData;
         } catch (error) {
