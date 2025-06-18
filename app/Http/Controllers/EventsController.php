@@ -264,8 +264,27 @@ class EventsController extends Controller
                 }
             }
 
-            // Cria dinamicamente o evento com base no tipo
-            $eventClass = "App\\Events\\{$eventType}";
+            // MAPEAMENTO DE EVENTOS CUSTOM PARA EVENTOS PADRÃO DO FACEBOOK
+            $eventMapping = [
+                'Scroll_25' => 'ViewContent',
+                'Scroll_50' => 'ViewContent', 
+                'Scroll_75' => 'ViewContent',
+                'Scroll_90' => 'ViewContent',
+                'Timer_1min' => 'ViewContent',
+                'PlayVideo' => 'ViewContent',
+                'ViewVideo_25' => 'ViewContent',
+                'ViewVideo_50' => 'ViewContent', 
+                'ViewVideo_75' => 'ViewContent',
+                'ViewVideo_90' => 'ViewContent',
+                'ViewHome' => 'PageView',
+                'ViewList' => 'ViewContent'
+            ];
+            
+            // Usar evento mapeado para server-side se existir, manter original para client-side
+            $serverSideEventType = $eventMapping[$eventType] ?? $eventType;
+            
+            // Cria dinamicamente o evento com base no tipo (usando mapeamento para server-side)
+            $eventClass = "App\\Events\\{$serverSideEventType}";
             if (!class_exists($eventClass)) {
                 return response()->json(['error' => 'Tipo de evento inválido.'], 400);
             }
@@ -286,6 +305,11 @@ class EventsController extends Controller
             
             // Cria CustomData base com os content_ids corretos
             $customData = (new CustomData())->setContentIds($finalContentIds);
+            
+            // Adicionar evento original como custom parameter para eventos mapeados
+            if (isset($eventMapping[$eventType])) {
+                $customData->setCustomProperties(['original_event' => $eventType]);
+            }
             
             // Adiciona parâmetros específicos baseados no tipo de evento
             if ($eventType === 'Search' && isset($validatedData['search_string']) && !empty($validatedData['search_string'])) {
@@ -393,10 +417,25 @@ class EventsController extends Controller
             
             // ENVIO PARA FACEBOOK CONVERSIONS API (SERVER-SIDE)
             try {
-                ConversionsApi::addEvent($event)->sendEvents();
+                $response = ConversionsApi::addEvent($event)->sendEvents();
+                
+                // LOG DETALHADO DA RESPOSTA DA API
                 Log::channel('Events')->info("✅ SERVER-SIDE ENVIADO: " . $eventType . " - EventID: " . $event->getEventId());
+                Log::channel('Events')->info("📊 API RESPONSE: " . json_encode([
+                    'action_source' => $event->getActionSource(),
+                    'event_name' => $event->getEventName(),
+                    'event_id' => $event->getEventId(),
+                    'response' => $response ? 'Success' : 'Failed'
+                ]));
+                
             } catch (\Exception $apiError) {
                 Log::error("❌ ERRO SERVER-SIDE: " . $eventType . " - " . $apiError->getMessage());
+                Log::error("🔍 ERRO DETALHADO: " . json_encode([
+                    'event_type' => $eventType,
+                    'event_id' => $event->getEventId(),
+                    'action_source' => $event->getActionSource(),
+                    'error_trace' => $apiError->getTraceAsString()
+                ]));
                 throw $apiError;
             }
 

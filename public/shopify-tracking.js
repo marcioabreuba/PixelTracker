@@ -333,7 +333,7 @@ async function sendEvent(eventType, data = {}) {
                 console.log(`✅ Evento ${eventType} enviado para Pixel (client-side) com eventID: ${responseData.eventID}`);
                 console.log(`📦 Content IDs: ${JSON.stringify(pixelData.content_ids)}`);
             }
-        }, 200); // 200ms delay para server-side processar primeiro
+        }, 500); // 500ms delay para server-side processar primeiro
 
         return responseData;
         } catch (error) {
