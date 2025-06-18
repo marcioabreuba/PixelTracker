@@ -323,7 +323,9 @@ async function sendEvent(eventType, data = {}) {
                 if (data.search_string) pixelData.search_string = data.search_string;
 
                 // Enviar para o pixel com dados padronizados
-                if (customEvents.includes(eventType)) {
+                const allCustomEvents = ['Scroll_25', 'Scroll_50', 'Scroll_75', 'Scroll_90', 'Timer_1min', 'PlayVideo', 'ViewVideo_25', 'ViewVideo_50', 'ViewVideo_75', 'ViewVideo_90', 'ViewHome', 'ViewList'];
+                
+                if (allCustomEvents.includes(eventType)) {
                     fbq('trackCustom', eventType, pixelData, { eventID: responseData.eventID });
                 } else {
                     fbq('track', eventType, pixelData, { eventID: responseData.eventID });
