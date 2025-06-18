@@ -193,7 +193,7 @@ class EventsController extends Controller
             ]);
 
             $validatedData = $request->validate([
-                'eventType' => 'required|string|in:Init,PageView,ViewHome,ViewList,ViewContent,AddToCart,ViewCart,Search,Lead,AddToWishlist,InitiateCheckout,Purchase,Scroll_25,Scroll_50,Scroll_75,Scroll_90,Timer_1min,PlayVideo,ViewVideo_25,ViewVideo_50,ViewVideo_75,ViewVideo_90',
+                'eventType' => 'required|string|in:Init,PageView,ViewContent,Lead,AddToWishlist,AddToCart,InitiateCheckout,Purchase,Scroll_25,Scroll_50,Scroll_75,Scroll_90,Timer_1min,PlayVideo,ViewVideo_25,ViewVideo_50,ViewVideo_75,ViewVideo_90',
                 'event_source_url' => 'nullable|string',
                 '_fbc' => 'nullable|string', 
                 '_fbp' => 'nullable|string',
@@ -202,24 +202,6 @@ class EventsController extends Controller
                 'ln' => 'nullable|string|max:255',
                 'em' => 'nullable|email|max:255',
                 'ph' => 'nullable|string|max:15',
-                // Parâmetros otimizados padronizados
-                'app' => 'nullable|string',
-                'language' => 'nullable|string',
-                'referrer_url' => 'nullable|string',
-                'content_type' => 'nullable|string',
-                'content_category' => 'nullable|array',
-                'content_name' => 'nullable|array',
-                'num_items' => 'nullable|integer',
-                'search_string' => 'nullable|string',
-                // Parâmetros de produto/conteúdo
-                'content_ids' => 'nullable|array',
-                'value' => 'nullable|numeric',
-                'currency' => 'nullable|string|size:3',
-                // Novos parâmetros padronizados
-                'timestamp' => 'nullable|integer',
-                'page_url' => 'nullable|string',
-                'page_title' => 'nullable|string',
-                'device_type' => 'nullable|string|in:mobile,desktop',
             ]);
 
             $eventType = $validatedData['eventType'];
@@ -264,87 +246,17 @@ class EventsController extends Controller
                 }
             }
 
-            // MAPEAMENTO DE EVENTOS CUSTOM PARA EVENTOS PADRÃO DO FACEBOOK
-            $eventMapping = [
-                'Scroll_25' => 'ViewContent',
-                'Scroll_50' => 'ViewContent', 
-                'Scroll_75' => 'ViewContent',
-                'Scroll_90' => 'ViewContent',
-                'Timer_1min' => 'ViewContent',
-                'PlayVideo' => 'ViewContent',
-                'ViewVideo_25' => 'ViewContent',
-                'ViewVideo_50' => 'ViewContent', 
-                'ViewVideo_75' => 'ViewContent',
-                'ViewVideo_90' => 'ViewContent',
-                'ViewHome' => 'PageView',
-                'ViewList' => 'ViewContent'
-            ];
-            
-            // Usar evento mapeado para server-side se existir, manter original para client-side
-            $serverSideEventType = $eventMapping[$eventType] ?? $eventType;
-            
-            // Cria dinamicamente o evento com base no tipo (usando mapeamento para server-side)
-            $eventClass = "App\\Events\\{$serverSideEventType}";
+            // Cria dinamicamente o evento com base no tipo
+            $eventClass = "App\\Events\\{$eventType}";
             if (!class_exists($eventClass)) {
                 return response()->json(['error' => 'Tipo de evento inválido.'], 400);
             }
 
-            // Determina os content_ids corretos
-            $finalContentIds = [$contentId]; // Fallback padrão (domínio)
-            
-            // Se o frontend enviou content_ids específicos, usar eles
-            if (isset($validatedData['content_ids']) && !empty($validatedData['content_ids'])) {
-                $finalContentIds = array_filter($validatedData['content_ids'], function($id) {
-                    return !empty($id) && trim($id) !== '';
-                });
-                // Se ainda estiver vazio, usar o contentId como fallback
-                if (empty($finalContentIds)) {
-                    $finalContentIds = [$contentId];
-                }
-            }
-            
-            // Cria CustomData base com os content_ids corretos
-            $customData = (new CustomData())->setContentIds($finalContentIds);
-            
-            // Adicionar evento original como custom parameter para eventos mapeados
-            if (isset($eventMapping[$eventType])) {
-                $customData->setCustomProperties(['original_event' => $eventType]);
-            }
-            
-            // Adiciona parâmetros específicos baseados no tipo de evento
-            if ($eventType === 'Search' && isset($validatedData['search_string']) && !empty($validatedData['search_string'])) {
-                $customData->setSearchString($validatedData['search_string']);
-            }
-            
-            // Adiciona outros parâmetros otimizados se disponíveis
-            if (isset($validatedData['content_type']) && !empty($validatedData['content_type'])) {
-                $customData->setContentType($validatedData['content_type']);
-            }
-            
-            if (isset($validatedData['content_category']) && !empty($validatedData['content_category'])) {
-                $customData->setContentCategory($validatedData['content_category']);
-            }
-            
-            if (isset($validatedData['content_name']) && !empty($validatedData['content_name'])) {
-                $customData->setContentName($validatedData['content_name']);
-            }
-            
-            if (isset($validatedData['num_items']) && !empty($validatedData['num_items'])) {
-                $customData->setNumItems($validatedData['num_items']);
-            }
-            
-            // Adiciona value e currency se disponíveis (importante para Purchase, AddToCart, etc.)
-            if (isset($validatedData['value']) && !empty($validatedData['value'])) {
-                $customData->setValue($validatedData['value']);
-            }
-            
-            if (isset($validatedData['currency']) && !empty($validatedData['currency'])) {
-                $customData->setCurrency($validatedData['currency']);
-            }
-
             $event = $eventClass::create()
                 ->setEventSourceUrl($event_source_url)
-                ->setCustomData($customData);
+                ->setCustomData(
+                    (new CustomData())->setContentIds([$contentId])
+                );
             $eventID = $event->getEventId();
 
             $advancedMatching = $event->getUserData()
@@ -392,52 +304,10 @@ class EventsController extends Controller
                     'em' => $validatedData['em'] ?? '',
                     'ph' => $validatedData['ph'] ?? '',
                 ],
-                'custom_data' => [
-                    'content_ids' => $finalContentIds,
-                    'search_string' => $validatedData['search_string'] ?? null,
-                    'content_type' => $validatedData['content_type'] ?? null,
-                    'content_category' => $validatedData['content_category'] ?? null,
-                    'content_name' => $validatedData['content_name'] ?? null,
-                    'num_items' => $validatedData['num_items'] ?? null,
-                    'value' => $validatedData['value'] ?? null,
-                    'currency' => $validatedData['currency'] ?? null,
-                ],
-                'standardized_params' => [
-                    'app' => $validatedData['app'] ?? null,
-                    'language' => $validatedData['language'] ?? null,
-                    'referrer_url' => $validatedData['referrer_url'] ?? null,
-                    'timestamp' => $validatedData['timestamp'] ?? null,
-                    'page_url' => $validatedData['page_url'] ?? null,
-                    'page_title' => $validatedData['page_title'] ?? null,
-                    'device_type' => $validatedData['device_type'] ?? null,
-                ],
             ];
 
             $event->setUserData($advancedMatching);
-            
-            // ENVIO PARA FACEBOOK CONVERSIONS API (SERVER-SIDE)
-            try {
-                $response = ConversionsApi::addEvent($event)->sendEvents();
-                
-                // LOG DETALHADO DA RESPOSTA DA API
-                Log::channel('Events')->info("✅ SERVER-SIDE ENVIADO: " . $eventType . " - EventID: " . $event->getEventId());
-                Log::channel('Events')->info("📊 API RESPONSE: " . json_encode([
-                    'action_source' => $event->getActionSource(),
-                    'event_name' => $event->getEventName(),
-                    'event_id' => $event->getEventId(),
-                    'response' => $response ? 'Success' : 'Failed'
-                ]));
-                
-            } catch (\Exception $apiError) {
-                Log::error("❌ ERRO SERVER-SIDE: " . $eventType . " - " . $apiError->getMessage());
-                Log::error("🔍 ERRO DETALHADO: " . json_encode([
-                    'event_type' => $eventType,
-                    'event_id' => $event->getEventId(),
-                    'action_source' => $event->getActionSource(),
-                    'error_trace' => $apiError->getTraceAsString()
-                ]));
-                throw $apiError;
-            }
+            ConversionsApi::addEvent($event)->sendEvents();
 
             Log::channel('Events')->info(json_encode($log, JSON_PRETTY_PRINT));
 
