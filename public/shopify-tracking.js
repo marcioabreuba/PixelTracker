@@ -121,7 +121,7 @@ async function sendEvent(eventType, data = {}) {
 
         // Enviar para Facebook Pixel (client-side) com eventID compartilhado
         if (typeof fbq !== 'undefined' && responseData.eventID) {
-            const customEvents = ['Scroll_25', 'Scroll_50', 'Scroll_75', 'Scroll_90', 'Timer_1min', 'PlayVideo', 'ViewVideo_25', 'ViewVideo_50', 'ViewVideo_75', 'ViewVideo_90'];
+            const customEvents = ['ViewList', 'ViewHome', 'ViewCart', 'Scroll_25', 'Scroll_50', 'Scroll_75', 'Scroll_90', 'Timer_1min', 'PlayVideo', 'ViewVideo_25', 'ViewVideo_50', 'ViewVideo_75', 'ViewVideo_90'];
             
             // Preparar dados para o pixel
             const pixelData = {};
@@ -148,6 +148,27 @@ async function sendEvent(eventType, data = {}) {
                 pixelData.content_type = getPageType();
                 pixelData.content_category = getPageCategory();
                 pixelData.content_name = getPageName();
+                pixelData.num_items = 1;
+            } else if (eventType === 'ViewList') {
+                pixelData.content_type = 'product_group';
+                pixelData.content_category = ['Category'];
+                pixelData.content_name = ['Product List'];
+                if (data.num_items) pixelData.num_items = data.num_items;
+            } else if (eventType === 'ViewHome') {
+                pixelData.content_type = 'website';
+                pixelData.content_category = ['Home'];
+                pixelData.content_name = ['Home Page'];
+                pixelData.num_items = 1;
+            } else if (eventType === 'ViewCart') {
+                pixelData.content_type = 'product';
+                pixelData.content_category = ['Cart'];
+                pixelData.content_name = ['Shopping Cart'];
+                if (data.num_items) pixelData.num_items = data.num_items;
+            } else if (eventType === 'Search') {
+                pixelData.content_type = 'search';
+                pixelData.content_category = ['Search'];
+                pixelData.content_name = ['Search Results'];
+                if (data.search_string) pixelData.search_string = data.search_string;
                 pixelData.num_items = 1;
             } else if (eventType === 'InitiateCheckout') {
                 pixelData.content_type = 'checkout';
@@ -274,6 +295,50 @@ function setupShopifyEvents() {
         setTimeout(() => {
             const productData = getShopifyProductData();
             sendEvent('ViewContent', productData);
+        }, 1000);
+    }
+
+    // ViewHome para página inicial
+    if (window.location.pathname === '/' || window.location.pathname === '') {
+        setTimeout(() => {
+            sendEvent('ViewHome');
+        }, 1000);
+    }
+
+    // ViewList para páginas de categoria/coleção
+    if (window.location.pathname.includes('/collections/')) {
+        setTimeout(() => {
+            const listData = getCollectionData();
+            sendEvent('ViewList', listData);
+        }, 1000);
+    }
+
+    // ViewCart para página do carrinho
+    if (window.location.pathname.includes('/cart')) {
+        setTimeout(() => {
+            const cartData = getCartData();
+            sendEvent('ViewCart', cartData);
+        }, 1000);
+    }
+
+    // Search - detectar pesquisas
+    document.addEventListener('submit', (e) => {
+        const form = e.target;
+        if (form.matches('form[action*="search"], .search-form, [data-search-form]')) {
+            setTimeout(() => {
+                const searchTerm = getSearchTerm(form);
+                sendEvent('Search', { search_string: searchTerm });
+            }, 100);
+        }
+    });
+
+    // Search - detectar também quando usuário navega para página de resultados
+    if (window.location.pathname.includes('/search') || window.location.search.includes('q=')) {
+        setTimeout(() => {
+            const searchTerm = getSearchTermFromUrl();
+            if (searchTerm) {
+                sendEvent('Search', { search_string: searchTerm });
+            }
         }, 1000);
     }
 
@@ -423,6 +488,83 @@ function getCartItemsCount() {
     }
     
     return 1; // Default
+}
+
+// Função para obter dados da coleção/categoria
+function getCollectionData() {
+    const collectionData = {};
+    
+    // Tentar obter nome da coleção
+    const collectionTitle = document.querySelector('h1.collection-title, .collection-header h1, .page-title');
+    if (collectionTitle) {
+        collectionData.content_category = [collectionTitle.textContent.trim()];
+        collectionData.content_name = [collectionTitle.textContent.trim()];
+    }
+    
+    // Contar produtos na página
+    const products = document.querySelectorAll('.product-item, .grid__item, [data-product-id]');
+    if (products.length > 0) {
+        collectionData.num_items = products.length;
+    }
+    
+    collectionData.content_type = 'product_group';
+    
+    return collectionData;
+}
+
+// Função para obter dados do carrinho
+function getCartData() {
+    const cartData = {};
+    
+    // Tentar obter valor total do carrinho
+    const totalElement = document.querySelector('.cart__total, .cart-total, [data-cart-total]');
+    if (totalElement) {
+        const totalText = totalElement.textContent || totalElement.dataset.cartTotal;
+        const total = parseFloat(totalText.replace(/[^\d.,]/g, '').replace(',', '.'));
+        if (!isNaN(total)) {
+            cartData.value = total;
+            cartData.currency = 'BRL';
+        }
+    }
+    
+    // Contar itens no carrinho
+    const cartItems = document.querySelectorAll('.cart-item, [data-cart-item]');
+    if (cartItems.length > 0) {
+        cartData.num_items = cartItems.length;
+        
+        // Coletar IDs dos produtos no carrinho
+        const contentIds = [];
+        cartItems.forEach(item => {
+            const productId = item.dataset.productId || item.dataset.variantId;
+            if (productId) {
+                contentIds.push(productId);
+            }
+        });
+        if (contentIds.length > 0) {
+            cartData.content_ids = contentIds;
+        }
+    }
+    
+    cartData.content_type = 'product';
+    cartData.content_category = ['Cart'];
+    cartData.content_name = ['Shopping Cart'];
+    
+    return cartData;
+}
+
+// Função para obter termo de pesquisa de formulário
+function getSearchTerm(form) {
+    const searchInput = form.querySelector('[name="q"], [name="query"], [name="search"], input[type="search"]');
+    if (searchInput && searchInput.value) {
+        return searchInput.value.trim();
+    }
+    return '';
+}
+
+// Função para obter termo de pesquisa da URL
+function getSearchTermFromUrl() {
+    const urlParams = new URLSearchParams(window.location.search);
+    return urlParams.get('q') || urlParams.get('query') || urlParams.get('search') || '';
 }
 
 // Configurar tracking de scroll

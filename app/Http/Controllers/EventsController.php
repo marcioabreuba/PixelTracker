@@ -4,6 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Events\PageView;
 use App\Events\ViewContent;
+use App\Events\ViewList;
+use App\Events\ViewHome;
+use App\Events\ViewCart;
+use App\Events\Search;
 use App\Events\Lead;
 use App\Events\AddToWishlist;
 use App\Events\AddToCart;
@@ -193,7 +197,7 @@ class EventsController extends Controller
             ]);
 
             $validatedData = $request->validate([
-                'eventType' => 'required|string|in:Init,PageView,ViewContent,Lead,AddToWishlist,AddToCart,InitiateCheckout,Purchase,Scroll_25,Scroll_50,Scroll_75,Scroll_90,Timer_1min,PlayVideo,ViewVideo_25,ViewVideo_50,ViewVideo_75,ViewVideo_90',
+                'eventType' => 'required|string|in:Init,PageView,ViewContent,ViewList,ViewHome,ViewCart,Search,Lead,AddToWishlist,AddToCart,InitiateCheckout,Purchase,Scroll_25,Scroll_50,Scroll_75,Scroll_90,Timer_1min,PlayVideo,ViewVideo_25,ViewVideo_50,ViewVideo_75,ViewVideo_90',
                 'event_source_url' => 'nullable|string',
                 '_fbc' => 'nullable|string', 
                 '_fbp' => 'nullable|string',
