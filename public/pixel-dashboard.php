@@ -272,7 +272,7 @@
         <?php
         // Limpar logs se solicitado
         if (isset($_GET['clear']) && $_GET['clear'] === 'logs') {
-            $logFile = '../storage/logs/laravel.log';
+            $logFile = '../storage/logs/PixelTracker.log';
             if (file_exists($logFile)) {
                 file_put_contents($logFile, '');
                 echo '<div style="background: #d4edda; color: #155724; padding: 1rem; margin: 1rem; border-radius: 6px; border: 1px solid #c3e6cb;">
@@ -282,7 +282,7 @@
         }
 
         // Ler logs
-        $logFile = '../storage/logs/laravel.log';
+        $logFile = '../storage/logs/PixelTracker.log';
         $logs = [];
         $stats = [
             'total' => 0,

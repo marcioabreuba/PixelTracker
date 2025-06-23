@@ -4,11 +4,11 @@
  * Uso: php clear-logs.php
  */
 
-$logFile = '../storage/logs/laravel.log';
+$logFile = '../storage/logs/PixelTracker.log';
 
 if (file_exists($logFile)) {
     // Fazer backup antes de limpar (opcional)
-    $backupFile = '../storage/logs/laravel_backup_' . date('Y-m-d_H-i-s') . '.log';
+    $backupFile = '../storage/logs/PixelTracker_backup_' . date('Y-m-d_H-i-s') . '.log';
     
     if (filesize($logFile) > 0) {
         copy($logFile, $backupFile);
