@@ -82,7 +82,7 @@ class ShopifyController extends Controller
             $country = $user->country ?? strtolower($billing_address['country_code'] ?? '');
             $st = $user->st ?? strtolower($billing_address['province_code'] ?? '');
             $ct = $user->ct ?? strtolower($billing_address['city'] ?? '');
-            $zp = $user->zp ?? $billing_address['zip'] ?? '';
+            $zp = $user->zp ?? ''; // Sempre usar apenas o zip do geoIP
 
             // Configurar credenciais do Facebook
             $domains = config('conversions.domains');

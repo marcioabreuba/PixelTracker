@@ -167,7 +167,7 @@ class EventsController extends Controller
             $hashedCountry = hash('sha256', $country);
             $hashedState = hash('sha256', $state);
             $hashedCity = hash('sha256', $city);
-            $hashedPostalCode = hash('sha256', $postalCode);
+            $hashedPostalCode = $postalCode ? hash('sha256', $postalCode) : null;
         } catch (\Exception $e) {
             $country = null;
             $state = null;
