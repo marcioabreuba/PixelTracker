@@ -133,6 +133,13 @@ return [
             'level' => 'debug',
         ],
 
+        'PixelTracker' => [
+            'driver' => 'single',
+            'path' => storage_path('logs/PixelTracker.log'),
+            'level' => 'debug',
+            'replace_placeholders' => true,
+        ],
+
     ],
 
 ];

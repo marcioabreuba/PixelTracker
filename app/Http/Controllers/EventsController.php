@@ -34,6 +34,7 @@ use FacebookAds\Object\ServerSide\UserData;
 use FacebookAds\Object\ServerSide\Content;
 use Illuminate\Support\Facades\Config;
 use App\Models\User;
+use App\Services\PixelLogger;
 
 class EventsController extends Controller
 {
@@ -52,11 +53,6 @@ class EventsController extends Controller
             
             // Validar se é um IP válido
             if (filter_var($clientIp, FILTER_VALIDATE_IP)) {
-                Log::error('IP Real do Cliente (X-Forwarded-For):', [
-                    'client_ip' => $clientIp,
-                    'full_header' => $xForwardedFor,
-                    'all_ips' => array_map('trim', $ips)
-                ]);
                 return $clientIp;
             }
         }
@@ -77,81 +73,42 @@ class EventsController extends Controller
             if (!empty($ip)) {
                 $ip = trim($ip);
                 if (filter_var($ip, FILTER_VALIDATE_IP)) {
-                    Log::error('IP Encontrado em Header Alternativo:', [
-                        'header' => $headerName,
-                        'ip' => $ip
-                    ]);
                     return $ip;
                 }
             }
         }
 
         // PRIORIDADE 3: Fallback para request IP
-        $fallbackIp = $request->ip();
-        Log::error('Usando IP Request como Fallback:', [
-            'fallback_ip' => $fallbackIp
-        ]);
-        return $fallbackIp;
+        return $request->ip();
     }
 
     public function send(Request $request)
     {
-        // Debug logs para identificar o problema
-        Log::error('=== DEBUG EVENTS CONTROLLER ===');
-        Log::error('Request data:', ['data' => $request->all()]);
-        Log::error('Content ID:', ['contentId' => $request->post('contentId')]);
-        Log::error('Config domains:', ['domains' => config('conversions.domains')]);
+        // Log estruturado do início do evento
+        $eventType = $request->input('eventType', 'Unknown');
+        PixelLogger::logEventStart($eventType, $request->all());
         
-        // Debug completo de headers para entender o que está disponível
-        Log::error('=== HEADERS DEBUG ===', [
-            'all_headers' => $request->headers->all(),
-            'server_vars' => array_filter($_SERVER, function($key) {
-                return strpos($key, 'HTTP_') === 0 || in_array($key, ['REMOTE_ADDR', 'SERVER_ADDR']);
-            }, ARRAY_FILTER_USE_KEY)
-        ]);
-        
-        // Debug específico de IP
+        // Detectar IP do cliente e logar
         $detectedIp = $this->getRealClientIP($request);
-        Log::error('=== IP DETECTION RESULT ===', [
-            'detected_ip' => $detectedIp,
-            'request_ip' => $request->ip(),
-            'x_forwarded_for' => $request->header('X-Forwarded-For'),
-            'cf_connecting_ip' => $request->header('CF-Connecting-IP'),
-            'x_real_ip' => $request->header('X-Real-IP')
-        ]);
+        PixelLogger::logIPDetection($request, $detectedIp);
         
         try {
-            // Executar o login no GeoLite
-            // ==================================================
+            // Executar o processamento GeoIP
             $geoipPath = storage_path('app/geoip/GeoLite2-City.mmdb');
             if (!file_exists($geoipPath) || filesize($geoipPath) < 100) {
                 throw new \Exception('GeoIP database not available');
             }
             $reader = new Reader($geoipPath);
-            $ip = $this->getRealClientIP($request);
+            $ip = $detectedIp;
             $record = $reader->city($ip);
             
             // Obter todos os dados com o GeoLite
-            // ==================================================
             $country = strtolower($record->country->isoCode);
             $state = strtolower($record->mostSpecificSubdivision->isoCode);
             $city = strtolower($record->city->name);
             $postalCode = $record->postal->code;
-            
-            // Debug da geolocalização
-            Log::error('=== GEOIP RESULT ===', [
-                'ip_used' => $ip,
-                'country' => $country,
-                'state' => $state,
-                'city_original' => $record->city->name,
-                'city_processed' => $city,
-                'postal_code' => $postalCode,
-                'latitude' => $record->location->latitude,
-                'longitude' => $record->location->longitude
-            ]);
 
             // Substitui acentos manualmente
-            // ==================================================
             $city = strtr($city, [
                 'á' => 'a', 'à' => 'a', 'ã' => 'a', 'â' => 'a',
                 'é' => 'e', 'ê' => 'e', 'í' => 'i', 'ó' => 'o',
@@ -163,11 +120,24 @@ class EventsController extends Controller
             $city = preg_replace('/[^a-z]/', '', $city); 
 
             // Colocar hash nos dados
-            // ==================================================
             $hashedCountry = hash('sha256', $country);
             $hashedState = hash('sha256', $state);
             $hashedCity = hash('sha256', $city);
             $hashedPostalCode = $postalCode ? hash('sha256', $postalCode) : null;
+            
+            // Log estruturado dos dados GeoIP
+            PixelLogger::logGeoIP($ip, [
+                'country' => $country,
+                'state' => $state,
+                'city' => $city,
+                'postal_code' => $postalCode,
+                'latitude' => $record->location->latitude,
+                'longitude' => $record->location->longitude,
+                'country_hash' => $hashedCountry,
+                'state_hash' => $hashedState,
+                'city_hash' => $hashedCity,
+                'postal_hash' => $hashedPostalCode
+            ]);
         } catch (\Exception $e) {
             $country = null;
             $state = null;
@@ -177,10 +147,10 @@ class EventsController extends Controller
             $hashedState = null;
             $hashedCity = null;
             $hashedPostalCode = null;
-            logger()->error('Erro ao consultar o GeoIP: ' . $e->getMessage());
+            PixelLogger::logError('GeoIP', $e->getMessage());
         }
         try {
-            // Apenas para quem usa a minha Api
+            // Configurar pixel baseado no contentId
             $contentId = $request->post('contentId');
             $domains = config('conversions.domains');
             if (isset($domains[$contentId])) {
@@ -188,8 +158,11 @@ class EventsController extends Controller
                 Config::set('conversions-api.pixel_id', $config['pixel_id']);
                 Config::set('conversions-api.access_token', $config['access_token']);
                 Config::set('conversions-api.test_code', $config['test_code']);
+                
+                // Log da configuração do pixel
+                PixelLogger::logPixelConfig($contentId, $config);
             } else {
-                Log::info('[ERROR][EVENTS] Não achou o produto no banco de dados: ' . $contentId);
+                PixelLogger::logError('Configuração Pixel', 'Content ID não encontrado: ' . $contentId);
             }
             
             $request->merge([
@@ -288,38 +261,37 @@ class EventsController extends Controller
                 $advancedMatching->setPhone($validatedData['ph']);
             }
 
-            $log = [
-                'event_id' => $event->getEventId(),
-                'event_name' => $event->getEventName(),
-                'event_time' => $event->getEventTime(),
-                'event_source_url' => $event->getEventSourceUrl(),
-                'user_data' => [
-                    'client_user_agent' => $event->getUserData()->getClientUserAgent(),
-                    'client_ip_address' => $event->getUserData()->getClientIpAddress(),
-                    'fbc' => $event->getUserData()->getFbc(),
-                    'fbp' => $event->getUserData()->getFbp(),
-                    'external_id' => $userId,
-                    'country' => $advancedMatching->getCountryCode(),
-                    'state' => $advancedMatching->getState(),
-                    'city' => $advancedMatching->getCity(),
-                    'postal_code' => $advancedMatching->getZipCode(),
-                    'fn' => $validatedData['fn'] ?? '',
-                    'ln' => $validatedData['ln'] ?? '',
-                    'em' => $validatedData['em'] ?? '',
-                    'ph' => $validatedData['ph'] ?? '',
-                ],
-            ];
-
             $event->setUserData($advancedMatching);
+            
+            // Log antes de enviar para o Facebook
+            PixelLogger::logFacebookSend($eventType, $eventID, [
+                'external_id' => $userId,
+                'client_ip_address' => $event->getUserData()->getClientIpAddress(),
+                'client_user_agent' => $event->getUserData()->getClientUserAgent(),
+                'fbc' => $_fbc,
+                'fbp' => $_fbp,
+                'country' => $country,
+                'state' => $state,
+                'city' => $city,
+                'postal_code' => $postalCode,
+                'fn' => $validatedData['fn'] ?? '',
+                'ln' => $validatedData['ln'] ?? '',
+                'em' => $validatedData['em'] ?? '',
+                'ph' => $validatedData['ph'] ?? '',
+            ], [
+                'content_ids' => [$contentId]
+            ]);
+            
             ConversionsApi::addEvent($event)->sendEvents();
 
-            Log::channel('Events')->info(json_encode($log, JSON_PRETTY_PRINT));
+            // Log de sucesso
+            PixelLogger::logEventSuccess($eventType, $eventID, $userId);
 
             return response()->json(['eventID' => $eventID, 'external_id' => $userId]);
         } catch (\Exception $e) {
-            Log::error('Erro no envio do evento:', [
-                'message' => $e->getMessage(),
+            PixelLogger::logError('Envio Evento', $e->getMessage(), [
                 'trace' => $e->getTraceAsString(),
+                'request_data' => $request->all()
             ]);
 
             return response()->json(['error' => 'Erro interno no servidor.'], 500);

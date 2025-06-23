@@ -9,15 +9,17 @@ use FacebookAds\Object\ServerSide\CustomData;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Config;
+use App\Services\PixelLogger;
 
 class HotmartController extends Controller
 {
     public function Hotmart(Request $request)
     {
         try {
-            // Log::info('Recebendo Payload:', $request->all());
-
             $json = $request->input('data');
+            
+            // Log do início do processamento Hotmart
+            PixelLogger::logEventStart('Purchase', $json, 'HOTMART');
             $fn = strtolower($json['buyer']['first_name'] ?? '');
             $ln = strtolower($json['buyer']['last_name'] ?? '');
             $em = strtolower($json['buyer']['email'] ?? '');
@@ -58,15 +60,18 @@ class HotmartController extends Controller
             $em = $user->em ?? '';
             $ph = $user->ph ?? '';
 
-            // Apenas para os usuários da minha Api
+            // Configurar pixel baseado no contentId
             $domains = config('conversions.domains');
             if (isset($domains[$contentId])) {
                 $config = $domains[$contentId];
                 Config::set('conversions-api.pixel_id', $config['pixel_id']);
                 Config::set('conversions-api.access_token', $config['access_token']);
                 Config::set('conversions-api.test_code', $config['test_code']);
+                
+                // Log da configuração do pixel
+                PixelLogger::logPixelConfig($contentId, $config);
             } else {
-                Log::info('[ERROR][WEBHOOKS] Não achou o produto no banco de dados: ' . $contentId);
+                PixelLogger::logError('Configuração Pixel Hotmart', 'Content ID não encontrado: ' . $contentId);
             }
 
             $event = Purchase::create();
@@ -87,34 +92,36 @@ class HotmartController extends Controller
             $event->setUserData($advancedMatching);
             $event->setCustomData((new CustomData())->setContentIds([$contentId])->setCurrency($currency)->setValue($price));
 
+            // Log específico do evento Hotmart
+            PixelLogger::logShopifyEvent('Purchase', [
+                'order_id' => 'hotmart_' . ($json['transaction'] ?? 'unknown'),
+                'order_number' => $json['transaction'] ?? 'unknown',
+                'total_price' => $price,
+                'currency' => $currency,
+                'customer_email' => $em
+            ], [
+                'external_id' => $external_id,
+                'fn' => $fn,
+                'ln' => $ln,
+                'em' => $em,
+                'ph' => $ph
+            ], [
+                'event_id' => $event->getEventId(),
+                'pixel_id' => config('conversions-api.pixel_id'),
+                'success' => true
+            ]);
+
             ConversionsApi::addEvent($event)->sendEvents();
 
-            $log = [
-                'event_id' => $event->getEventId(),
-                'event_name' => $event->getEventName(),
-                'event_time' => $event->getEventTime(),
-                'event_source_url' => $event->getEventSourceUrl(),
-                'user_data' => [
-                    'client_user_agent' => $client_user_agent,
-                    'client_ip_address' => $client_ip_address,
-                    'fbc' => $fbc,
-                    'fbp' => $fbp,
-                    'external_id' => $external_id,
-                    'country' => $country,
-                    'state' => $st,
-                    'city' => $ct,
-                    'postal_code' => $zp,
-                    'fn' => $fn,
-                    'ln' => $ln,
-                    'em' => $em,
-                    'ph' => $ph,
-                ],
-            ];
-            Log::channel('Events')->info(json_encode($log, JSON_PRETTY_PRINT));
+            // Log de sucesso
+            PixelLogger::logEventSuccess('Purchase', $event->getEventId(), $external_id);
 
             return response()->json(['message' => 'Webhook processado com sucesso']);
         } catch (\Exception $e) {
-            Log::error('Erro ao processar webhook:', ['error' => $e->getMessage()]);
+            PixelLogger::logError('Webhook Hotmart', $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+                'request_data' => $request->all()
+            ]);
             return response()->json(['error' => 'Erro interno no servidor'], 500);
         }
     }

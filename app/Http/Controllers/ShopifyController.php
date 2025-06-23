@@ -11,15 +11,17 @@ use FacebookAds\Object\ServerSide\CustomData;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Config;
+use App\Services\PixelLogger;
 
 class ShopifyController extends Controller
 {
     public function purchase(Request $request)
     {
         try {
-            Log::info('Recebendo webhook do Shopify:', $request->all());
-            
             $json = $request->all();
+            
+            // Log do início do processamento Shopify
+            PixelLogger::logEventStart('Purchase', $json, 'SHOPIFY');
 
             // Extrair dados do cliente
             $customer = $json['customer'] ?? [];
@@ -40,17 +42,6 @@ class ShopifyController extends Controller
             
             // Extrair external_id das propriedades customizadas ou referrer
             $external_id = $this->extractExternalId($json);
-            
-            Log::info('Dados processados do Shopify:', [
-                'order_id' => $order_id,
-                'order_number' => $order_number,
-                'fn' => $fn,
-                'ln' => $ln,
-                'em' => $em,
-                'ph' => $ph,
-                'external_id' => $external_id,
-                'total_price' => $total_price
-            ]);
 
             // Buscar ou criar usuário
             $user = User::where('external_id', $external_id)->first();
@@ -91,8 +82,11 @@ class ShopifyController extends Controller
                 Config::set('conversions-api.pixel_id', $config['pixel_id']);
                 Config::set('conversions-api.access_token', $config['access_token']);
                 Config::set('conversions-api.test_code', $config['test_code']);
+                
+                // Log da configuração do pixel
+                PixelLogger::logPixelConfig($contentId, $config);
             } else {
-                Log::info('[ERROR][SHOPIFY] Não achou o produto no banco de dados: ' . $contentId);
+                PixelLogger::logError('Configuração Pixel Shopify', 'Content ID não encontrado: ' . $contentId);
             }
 
             // Criar evento de Purchase
@@ -121,33 +115,36 @@ class ShopifyController extends Controller
                     ->setOrderId($order_id)
             );
 
+            // Log específico do evento Shopify
+            PixelLogger::logShopifyEvent('Purchase', [
+                'order_id' => $order_id,
+                'order_number' => $order_number,
+                'total_price' => $total_price,
+                'currency' => $currency,
+                'customer_email' => $em
+            ], [
+                'external_id' => $external_id,
+                'fn' => $fn,
+                'ln' => $ln,
+                'em' => $em,
+                'ph' => $ph
+            ], [
+                'event_id' => $event->getEventId(),
+                'pixel_id' => config('conversions-api.pixel_id'),
+                'success' => true
+            ]);
+
             ConversionsApi::addEvent($event)->sendEvents();
 
-            $log = [
-                'event_id' => $event->getEventId(),
-                'event_name' => $event->getEventName(),
-                'event_time' => $event->getEventTime(),
-                'shopify_order_id' => $order_id,
-                'shopify_order_number' => $order_number,
-                'user_data' => [
-                    'external_id' => $external_id,
-                    'fn' => $fn,
-                    'ln' => $ln,
-                    'em' => $em,
-                    'ph' => $ph,
-                ],
-                'custom_data' => [
-                    'currency' => $currency,
-                    'value' => $total_price,
-                    'content_ids' => [$contentId]
-                ]
-            ];
-            
-            Log::channel('Events')->info(json_encode($log, JSON_PRETTY_PRINT));
+            // Log de sucesso
+            PixelLogger::logEventSuccess('Purchase', $event->getEventId(), $external_id);
 
             return response()->json(['message' => 'Webhook do Shopify processado com sucesso']);
         } catch (\Exception $e) {
-            Log::error('Erro ao processar webhook do Shopify:', ['error' => $e->getMessage()]);
+            PixelLogger::logError('Webhook Shopify', $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+                'request_data' => $request->all()
+            ]);
             return response()->json(['error' => 'Erro interno no servidor'], 500);
         }
     }
