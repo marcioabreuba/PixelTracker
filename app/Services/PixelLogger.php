@@ -199,17 +199,6 @@ class PixelLogger
     }
 
     /**
-     * Log específico para HERE Geocoding API
-     */
-    public static function logHereApi(string $message, array $data = [])
-    {
-        Log::channel('PixelTracker')->info("🗺️ HERE API: {$message}", [
-            'timestamp' => now()->format('Y-m-d H:i:s'),
-            'here_data' => $data
-        ]);
-    }
-
-    /**
      * Log de resposta da API do Facebook
      */
     public static function logFacebookResponse(array $response)
@@ -217,6 +206,48 @@ class PixelLogger
         Log::channel('PixelTracker')->info("📥 RESPOSTA FACEBOOK", [
             'timestamp' => now()->format('Y-m-d H:i:s'),
             'resposta' => $response
+        ]);
+    }
+
+    /**
+     * Log da resposta do Nominatim
+     */
+    public static function logNominatimResponse(float $lat, float $lon, array $data)
+    {
+        Log::channel('PixelTracker')->info("🗺️ NOMINATIM RESPOSTA", [
+            'coordenadas' => [
+                'latitude' => $lat,
+                'longitude' => $lon
+            ],
+            'dados_brutos' => [
+                'display_name' => $data['display_name'] ?? null,
+                'address' => $data['address'] ?? null
+            ],
+            'dados_normalizados' => [
+                'country' => $data['address']['country_code'] ?? null,
+                'state' => $data['address']['state'] ?? null,
+                'city' => $data['address']['city'] ?? $data['address']['town'] ?? $data['address']['village'] ?? null,
+                'postal_code' => $data['address']['postcode'] ?? null
+            ],
+            'timestamp' => now()->format('Y-m-d H:i:s')
+        ]);
+    }
+
+    /**
+     * Log de fallback para CEP via Nominatim
+     */
+    public static function logNominatimFallback(string $reason, ?array $nominatimData)
+    {
+        Log::channel('PixelTracker')->info("🔄 FALLBACK NOMINATIM", [
+            'motivo' => $reason,
+            'timestamp' => now()->format('Y-m-d H:i:s'),
+            'dados_obtidos' => $nominatimData ? [
+                'country' => $nominatimData['country'] ?? null,
+                'state' => $nominatimData['state'] ?? null,
+                'city' => $nominatimData['city'] ?? null,
+                'postal_code' => $nominatimData['postal_code'] ?? null,
+            ] : null,
+            'sucesso' => $nominatimData !== null
         ]);
     }
 } 

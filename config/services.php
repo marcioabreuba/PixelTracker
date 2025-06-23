@@ -35,11 +35,4 @@ return [
         ],
     ],
 
-    'here' => [
-        'api_key' => env('HERE_API_KEY'),
-        'base_url' => 'https://revgeocode.search.hereapi.com/v1',
-        'monthly_limit' => 250000,
-        'daily_limit' => 8000, // Margem de segurança
-    ],
-
 ];

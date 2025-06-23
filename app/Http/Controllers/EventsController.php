@@ -35,7 +35,7 @@ use FacebookAds\Object\ServerSide\Content;
 use Illuminate\Support\Facades\Config;
 use App\Models\User;
 use App\Services\PixelLogger;
-use App\Services\HereGeocodingService;
+use App\Services\FacebookGeoNormalizer;
 
 class EventsController extends Controller
 {
@@ -139,27 +139,6 @@ class EventsController extends Controller
                 'city_hash' => $hashedCity,
                 'postal_hash' => $hashedPostalCode
             ]);
-
-            // Se CEP não foi encontrado no GeoIP local, tentar HERE API
-            if (empty($postalCode) && isset($record->location->latitude) && isset($record->location->longitude)) {
-                $hereService = app(HereGeocodingService::class);
-                $herePostalCode = $hereService->reverseGeocode(
-                    $record->location->latitude, 
-                    $record->location->longitude
-                );
-                
-                if ($herePostalCode) {
-                    $postalCode = $herePostalCode;
-                    $hashedPostalCode = hash('sha256', $postalCode);
-                    
-                    PixelLogger::logHereApi('✅ CEP obtido via HERE API', [
-                        'original_postal_code' => null,
-                        'here_postal_code' => $postalCode,
-                        'latitude' => $record->location->latitude,
-                        'longitude' => $record->location->longitude
-                    ]);
-                }
-            }
         } catch (\Exception $e) {
             $country = null;
             $state = null;
@@ -170,6 +149,40 @@ class EventsController extends Controller
             $hashedCity = null;
             $hashedPostalCode = null;
             PixelLogger::logError('GeoIP', $e->getMessage());
+        }
+
+        // FALLBACK: Se GeoIP não retornou CEP, tentar Nominatim
+        if (empty($postalCode) && !empty($record) && isset($record->location->latitude) && isset($record->location->longitude)) {
+            try {
+                $nominatimData = FacebookGeoNormalizer::getLocationFromCoordinates(
+                    $record->location->latitude, 
+                    $record->location->longitude
+                );
+                
+                if ($nominatimData && !empty($nominatimData['postal_code'])) {
+                    // Usar dados do Nominatim apenas para complementar dados ausentes
+                    $postalCode = $nominatimData['postal_code'];
+                    $hashedPostalCode = hash('sha256', $postalCode);
+                    
+                    // Se outros dados estiverem vazios, usar do Nominatim também
+                    if (empty($country)) {
+                        $country = $nominatimData['country'];
+                        $hashedCountry = $country ? hash('sha256', $country) : null;
+                    }
+                    if (empty($state)) {
+                        $state = $nominatimData['state'];
+                        $hashedState = $state ? hash('sha256', $state) : null;
+                    }
+                    if (empty($city)) {
+                        $city = $nominatimData['city'];
+                        $hashedCity = $city ? hash('sha256', $city) : null;
+                    }
+                    
+                    PixelLogger::logNominatimFallback('CEP ausente no GeoIP', $nominatimData);
+                }
+            } catch (\Exception $e) {
+                PixelLogger::logError('Nominatim Fallback', $e->getMessage());
+            }
         }
         try {
             // Configurar pixel baseado no contentId
