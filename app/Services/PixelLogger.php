@@ -199,6 +199,17 @@ class PixelLogger
     }
 
     /**
+     * Log específico para HERE Geocoding API
+     */
+    public static function logHereApi(string $message, array $data = [])
+    {
+        Log::channel('PixelTracker')->info("🗺️ HERE API: {$message}", [
+            'timestamp' => now()->format('Y-m-d H:i:s'),
+            'here_data' => $data
+        ]);
+    }
+
+    /**
      * Log de resposta da API do Facebook
      */
     public static function logFacebookResponse(array $response)
