@@ -16,6 +16,116 @@ function getCookie(name) {
     return null;
 }
 
+// Função para definir cookie
+function setCookie(name, value, days = 365) {
+    const date = new Date();
+    date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+    const expires = `expires=${date.toUTCString()}`;
+    document.cookie = `${name}=${value}; ${expires}; path=/; SameSite=Lax`;
+}
+
+// Função para obter parâmetro da URL
+function getUrlParameter(name) {
+    const urlParams = new URLSearchParams(window.location.search);
+    return urlParams.get(name);
+}
+
+// Função para gerar _fbc a partir de fbclid
+function generateFbcFromFbclid(fbclid) {
+    if (!fbclid) return null;
+    
+    // Formato: fb.{subdominio}.{timestamp}.{fbclid}
+    const subdomain = 1; // Subdomínio padrão
+    const timestamp = Math.floor(Date.now() / 1000); // Timestamp atual em segundos
+    
+    return `fb.${subdomain}.${timestamp}.${fbclid}`;
+}
+
+// Função avançada para capturar _fbc com múltiplas fontes
+function getAdvancedFbc() {
+    // 1. Tentar obter _fbc do cookie
+    let fbc = getCookie('_fbc');
+    if (fbc) {
+        console.log('✅ _fbc encontrado no cookie:', fbc);
+        return fbc;
+    }
+
+    // 2. Tentar obter _fbc do localStorage
+    try {
+        fbc = localStorage.getItem('_fbc');
+        if (fbc) {
+            console.log('✅ _fbc encontrado no localStorage:', fbc);
+            // Recriar cookie se encontrado no localStorage
+            setCookie('_fbc', fbc);
+            return fbc;
+        }
+    } catch (e) {
+        console.warn('⚠️ Erro ao acessar localStorage:', e);
+    }
+
+    // 3. Tentar capturar fbclid da URL atual
+    let fbclid = getUrlParameter('fbclid');
+    if (fbclid) {
+        fbc = generateFbcFromFbclid(fbclid);
+        console.log('✅ fbclid capturado da URL:', fbclid, '-> _fbc gerado:', fbc);
+        
+        // Armazenar _fbc em cookie e localStorage
+        setCookie('_fbc', fbc);
+        try {
+            localStorage.setItem('_fbc', fbc);
+        } catch (e) {
+            console.warn('⚠️ Erro ao salvar no localStorage:', e);
+        }
+        return fbc;
+    }
+
+    // 4. Tentar extrair fbclid de URLs anteriores (referrer)
+    if (document.referrer) {
+        try {
+            const referrerUrl = new URL(document.referrer);
+            fbclid = referrerUrl.searchParams.get('fbclid');
+            if (fbclid) {
+                fbc = generateFbcFromFbclid(fbclid);
+                console.log('✅ fbclid capturado do referrer:', fbclid, '-> _fbc gerado:', fbc);
+                
+                // Armazenar _fbc em cookie e localStorage
+                setCookie('_fbc', fbc);
+                try {
+                    localStorage.setItem('_fbc', fbc);
+                } catch (e) {
+                    console.warn('⚠️ Erro ao salvar no localStorage:', e);
+                }
+                return fbc;
+            }
+        } catch (e) {
+            console.warn('⚠️ Erro ao processar referrer:', e);
+        }
+    }
+
+    // 5. Verificar se há fbclid no histórico do navegador (sessionStorage)
+    try {
+        fbclid = sessionStorage.getItem('fbclid');
+        if (fbclid) {
+            fbc = generateFbcFromFbclid(fbclid);
+            console.log('✅ fbclid encontrado no sessionStorage:', fbclid, '-> _fbc gerado:', fbc);
+            
+            // Armazenar _fbc em cookie e localStorage
+            setCookie('_fbc', fbc);
+            try {
+                localStorage.setItem('_fbc', fbc);
+            } catch (e) {
+                console.warn('⚠️ Erro ao salvar no localStorage:', e);
+            }
+            return fbc;
+        }
+    } catch (e) {
+        console.warn('⚠️ Erro ao acessar sessionStorage:', e);
+    }
+
+    console.log('ℹ️ Nenhum _fbc ou fbclid encontrado');
+    return '';
+}
+
 // Função para gerar UUID
 function generateUUID() {
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
@@ -25,12 +135,52 @@ function generateUUID() {
     });
 }
 
+// Função para capturar fbclid automaticamente quando a página carrega
+function captureAndStoreFbclid() {
+    const fbclid = getUrlParameter('fbclid');
+    if (fbclid) {
+        console.log('🔥 fbclid detectado na URL:', fbclid);
+        
+        // Armazenar fbclid no sessionStorage para uso futuro
+        try {
+            sessionStorage.setItem('fbclid', fbclid);
+            console.log('✅ fbclid armazenado no sessionStorage');
+        } catch (e) {
+            console.warn('⚠️ Erro ao salvar fbclid no sessionStorage:', e);
+        }
+        
+        // Gerar e armazenar _fbc imediatamente
+        const fbc = generateFbcFromFbclid(fbclid);
+        if (fbc) {
+            setCookie('_fbc', fbc);
+            try {
+                localStorage.setItem('_fbc', fbc);
+                console.log('✅ _fbc gerado e armazenado:', fbc);
+            } catch (e) {
+                console.warn('⚠️ Erro ao salvar _fbc no localStorage:', e);
+            }
+        }
+        
+        // Limpar fbclid da URL para manter URLs limpas (opcional)
+        if (window.history && window.history.replaceState) {
+            try {
+                const url = new URL(window.location);
+                url.searchParams.delete('fbclid');
+                window.history.replaceState(null, null, url.toString());
+                console.log('✅ fbclid removido da URL para manter limpeza');
+            } catch (e) {
+                console.warn('⚠️ Erro ao limpar URL:', e);
+            }
+        }
+    }
+}
+
 // Função principal para enviar eventos
 async function sendEvent(eventType, data = {}) {
     const contentId = window.shopifyFBConfig?.contentId || 'shopify_store';
     const apiUrl = window.shopifyFBConfig?.apiUrl || 'https://traqueamentophp.onrender.com';
     const event_source_url = window.location.href;
-    const _fbc = getCookie('_fbc') || '';
+    const _fbc = getAdvancedFbc(); // Usar função avançada de captura do _fbc
     const _fbp = getCookie('_fbp') || '';
     const userId = getCookie('userId') || '';
     let fn = getCookie("fn");
@@ -639,8 +789,11 @@ window.trackShopifyPurchase = function(orderData) {
 
 // Inicialização automática
 document.addEventListener('DOMContentLoaded', () => {
+    // Capturar fbclid imediatamente se presente na URL
+    captureAndStoreFbclid();
+    
     // Verificar se a configuração está disponível
-if (window.shopifyFBConfig) {
+    if (window.shopifyFBConfig) {
         console.log('🚀 Iniciando Shopify Facebook Tracking Duplo...');
         
         // Inicializar pixel
@@ -653,11 +806,17 @@ if (window.shopifyFBConfig) {
         console.log('📊 Server-side: API Laravel');
         console.log('🌐 Client-side: Facebook Pixel');
         console.log('🎯 Match Quality: Otimizado com dados pessoais');
+        console.log('🔗 fbc Coverage: Melhorado com captura de fbclid');
     } else {
         console.warn('⚠️ shopifyFBConfig não encontrado. Configure window.shopifyFBConfig antes de carregar este script.');
     }
 });
 
+// Capturar fbclid também quando script é carregado (para casos onde DOM já está pronto)
+captureAndStoreFbclid();
+
 // Expor funções globalmente para uso manual
 window.sendEvent = sendEvent;
 window.initPixel = initPixel;
+window.getAdvancedFbc = getAdvancedFbc;
+window.captureAndStoreFbclid = captureAndStoreFbclid;
