@@ -297,9 +297,14 @@ async function sendEvent(eventType, data = {}) {
             if (data.value) pixelData.value = data.value;
             if (data.currency) pixelData.currency = data.currency;
             
-            // Adicionar content_ids padrão se não fornecido
+            // Adicionar content_ids padrão apenas se nenhum foi fornecido nos dados específicos
             if (!pixelData.content_ids) {
-                pixelData.content_ids = [contentId];
+                // Para eventos contextuais, usar dados específicos se disponíveis
+                if (data.content_ids && data.content_ids.length > 0) {
+                    pixelData.content_ids = data.content_ids;
+                } else {
+                    pixelData.content_ids = [contentId];
+                }
             }
 
             // Adicionar parâmetros otimizados para melhor segmentação
@@ -494,6 +499,19 @@ function setupShopifyEvents() {
             sendEvent('ViewHome');
         }, 1000);
     }
+
+    // PageView para todas as páginas com dados contextuais
+    setTimeout(() => {
+        let pageViewData = {};
+        if (window.location.pathname.includes('/products/')) {
+            pageViewData = getShopifyProductData();
+        } else if (window.location.pathname.includes('/collections/')) {
+            pageViewData = getCollectionData();
+        } else if (window.location.pathname.includes('/cart')) {
+            pageViewData = getCartData();
+        }
+        sendEvent('PageView', pageViewData);
+    }, 1500);
 
     // ViewList para páginas de categoria/coleção
     if (window.location.pathname.includes('/collections/')) {
