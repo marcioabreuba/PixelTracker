@@ -135,6 +135,24 @@ function generateUUID() {
     });
 }
 
+// Função para formatar valores monetários adequadamente
+function formatCurrencyValue(value) {
+    if (value === null || value === undefined || isNaN(value)) {
+        return null;
+    }
+    
+    // Converter para número e arredondar para 2 casas decimais
+    const numValue = parseFloat(value);
+    
+    // Se for um valor inteiro (sem centavos), retornar como inteiro
+    if (numValue % 1 === 0) {
+        return parseInt(numValue);
+    }
+    
+    // Se tiver centavos, arredondar para 2 casas decimais
+    return Math.round(numValue * 100) / 100;
+}
+
 // Função para capturar fbclid automaticamente quando a página carrega
 function captureAndStoreFbclid() {
     const fbclid = getUrlParameter('fbclid');
@@ -391,8 +409,15 @@ async function initPixel() {
     fbq('init', pixelId, userData);
     console.log('🚀 Facebook Pixel inicializado com dados:', userData);
 
-    // Enviar PageView inicial
-    sendEvent('PageView');
+    // Enviar PageView inicial com dados contextuais
+    let pageViewData = {};
+    
+    // Se estiver numa página de produto, incluir dados do produto
+    if (window.location.pathname.includes('/products/')) {
+        pageViewData = getShopifyProductData();
+    }
+    
+    sendEvent('PageView', pageViewData);
 }
 
 // Inicialização do Facebook Pixel
@@ -429,7 +454,9 @@ function setupShopifyEvents() {
         document.addEventListener('click', (e) => {
         const checkoutButton = e.target.closest('.cart__checkout-button, [name="goto_checkout"], .btn--checkout, [href*="checkout"]');
             if (checkoutButton) {
-            sendEvent('InitiateCheckout');
+                // Incluir dados do carrinho se disponíveis
+                const cartData = getCartData();
+                sendEvent('InitiateCheckout', cartData);
         }
     });
 
@@ -437,7 +464,19 @@ function setupShopifyEvents() {
     document.addEventListener('submit', (e) => {
         const form = e.target;
         if (form.matches('.contact-form, .newsletter-form, form[action*="contact"], form[action*="newsletter"]')) {
-            setTimeout(() => sendEvent('Lead'), 100);
+            setTimeout(() => {
+                // Adicionar dados contextuais baseados na página
+                let contextData = {};
+                if (window.location.pathname.includes('/products/')) {
+                    contextData = getShopifyProductData();
+                } else if (window.location.pathname.includes('/collections/')) {
+                    contextData = getCollectionData();
+                } else if (window.location.pathname.includes('/cart')) {
+                    contextData = getCartData();
+                }
+                
+                sendEvent('Lead', contextData);
+            }, 100);
         }
     });
 
@@ -522,7 +561,7 @@ function getShopifyProductData() {
         const priceText = priceElement.textContent || priceElement.dataset.price;
         const price = parseFloat(priceText.replace(/[^\d.,]/g, '').replace(',', '.'));
         if (!isNaN(price)) {
-            productData.value = price;
+            productData.value = formatCurrencyValue(price);
             productData.currency = 'BRL';
         }
     }
@@ -673,7 +712,7 @@ function getCartData() {
         const totalText = totalElement.textContent || totalElement.dataset.cartTotal;
         const total = parseFloat(totalText.replace(/[^\d.,]/g, '').replace(',', '.'));
         if (!isNaN(total)) {
-            cartData.value = total;
+            cartData.value = formatCurrencyValue(total);
             cartData.currency = 'BRL';
         }
     }
@@ -733,7 +772,18 @@ function setupScrollTracking() {
             Object.keys(scrollTracker).forEach(threshold => {
                 if (scrollPercent >= threshold && !scrollTracker[threshold]) {
                     scrollTracker[threshold] = true;
-                sendEvent(`Scroll_${threshold}`);
+                    
+                    // Adicionar dados contextuais baseados na página
+                    let contextData = {};
+                    if (window.location.pathname.includes('/products/')) {
+                        contextData = getShopifyProductData();
+                    } else if (window.location.pathname.includes('/collections/')) {
+                        contextData = getCollectionData();
+                    } else if (window.location.pathname.includes('/cart')) {
+                        contextData = getCartData();
+                    }
+                    
+                    sendEvent(`Scroll_${threshold}`, contextData);
                 }
             });
         });
@@ -742,7 +792,17 @@ function setupScrollTracking() {
 // Configurar tracking de tempo
 function setupTimeTracking() {
         setTimeout(() => {
-        sendEvent('Timer_1min');
+            // Adicionar dados contextuais baseados na página
+            let contextData = {};
+            if (window.location.pathname.includes('/products/')) {
+                contextData = getShopifyProductData();
+            } else if (window.location.pathname.includes('/collections/')) {
+                contextData = getCollectionData();
+            } else if (window.location.pathname.includes('/cart')) {
+                contextData = getCartData();
+            }
+            
+            sendEvent('Timer_1min', contextData);
         }, 60000); // 1 minuto
     }
 
@@ -758,8 +818,21 @@ function setupVideoTracking() {
                 90: false
             };
             
+            // Função para obter dados contextuais
+            const getVideoContextData = () => {
+                let contextData = {};
+                if (window.location.pathname.includes('/products/')) {
+                    contextData = getShopifyProductData();
+                } else if (window.location.pathname.includes('/collections/')) {
+                    contextData = getCollectionData();
+                } else if (window.location.pathname.includes('/cart')) {
+                    contextData = getCartData();
+                }
+                return contextData;
+            };
+            
             video.addEventListener('play', () => {
-                sendEvent('PlayVideo');
+                sendEvent('PlayVideo', getVideoContextData());
             });
             
             video.addEventListener('timeupdate', () => {
@@ -768,7 +841,7 @@ function setupVideoTracking() {
                 Object.keys(videoEvents).forEach(threshold => {
                     if (percent >= parseInt(threshold) && !videoEvents[threshold]) {
                         videoEvents[threshold] = true;
-                        sendEvent(`ViewVideo_${threshold}`);
+                        sendEvent(`ViewVideo_${threshold}`, getVideoContextData());
                     }
                 });
             });
@@ -779,7 +852,7 @@ function setupVideoTracking() {
 // Função pública para tracking manual de Purchase
 window.trackShopifyPurchase = function(orderData) {
     const purchaseData = {
-        value: orderData.total_price,
+        value: formatCurrencyValue(orderData.total_price),
         currency: orderData.currency || 'BRL',
         content_ids: orderData.line_items?.map(item => item.variant_id) || [],
         order_id: orderData.order_id
