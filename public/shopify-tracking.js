@@ -355,12 +355,13 @@ async function initPixel() {
     let em = getCookie("em");
     let ph = getCookie("ph");
 
-    // Gerar userId se não existir
+    // Gerar userId se não existir (normalmente já foi gerado antecipadamente)
     if (!userId) {
         userId = generateUUID();
-        const date = new Date();
-        date.setFullYear(date.getFullYear() + 1);
-        document.cookie = `userId=${userId}; expires=${date.toUTCString()}; path=/`;
+        setCookie("userId", userId);
+        console.log("⚠️ userId gerado em initPixel (fallback):", userId);
+    } else {
+        console.log("✅ userId encontrado em initPixel:", userId);
     }
 
     // Obter dados de inicialização da API
@@ -813,6 +814,21 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // Capturar fbclid também quando script é carregado (para casos onde DOM já está pronto)
+captureAndStoreFbclid();
+
+// Garantir userId no início (ANTES do DOMContentLoaded)
+(function ensureUserIdEarly() {
+    let userId = getCookie("userId");
+    if (!userId) {
+        userId = generateUUID();
+        setCookie("userId", userId);
+        console.log("✅ userId inicial gerado antecipadamente:", userId);
+    } else {
+        console.log("✅ userId já existe:", userId);
+    }
+})();
+
+// Garantir captura antecipada de fbclid/_fbc (redundante mas seguro)
 captureAndStoreFbclid();
 
 // Expor funções globalmente para uso manual
