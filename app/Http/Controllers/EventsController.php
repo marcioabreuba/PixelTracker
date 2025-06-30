@@ -234,7 +234,9 @@ class EventsController extends Controller
                     'client_user_agent' => $initData->getClientUserAgent(),
                     'fbc' => $_fbc,
                     'fbp' => $_fbp,
-                    'external_id' => $userId
+                    'external_id' => $userId,
+                    // 🌍 GLOBAL: Adicionar país para funções de globalização no frontend
+                    'detected_country' => $country
                 ]);
             } elseif ($eventType == "PageView") {
                 $user = User::where('external_id', $userId)->first();

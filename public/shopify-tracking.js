@@ -2,7 +2,167 @@
  * Script de Tracking Duplo do Facebook para Shopify
  * Baseado no padrão otimizado para melhor match quality
  * Integração com API Laravel (server-side) + Pixel Facebook (client-side)
+ * ✅ GLOBAL READY - Suporte completo internacional
  */
+
+// =============================================================================
+// CONFIGURAÇÕES GLOBAIS DE INTERNACIONALIZAÇÃO
+// =============================================================================
+
+// Mapeamento de países para códigos telefônicos
+const COUNTRY_PHONE_CODES = {
+    'br': '55', 'us': '1', 'ca': '1', 'gb': '44', 'fr': '33', 'de': '49', 'it': '39', 'es': '34',
+    'pt': '351', 'nl': '31', 'be': '32', 'ch': '41', 'at': '43', 'se': '46', 'no': '47', 'dk': '45',
+    'fi': '358', 'pl': '48', 'cz': '420', 'hu': '36', 'ro': '40', 'bg': '359', 'hr': '385',
+    'ru': '7', 'ua': '380', 'jp': '81', 'cn': '86', 'kr': '82', 'in': '91', 'au': '61', 'nz': '64',
+    'za': '27', 'eg': '20', 'il': '972', 'tr': '90', 'gr': '30', 'ar': '54', 'cl': '56', 'co': '57',
+    'pe': '51', 'mx': '52', 've': '58', 'ec': '593', 'bo': '591', 'py': '595', 'uy': '598'
+};
+
+// Mapeamento de países para moedas
+const COUNTRY_CURRENCIES = {
+    'br': 'BRL', 'us': 'USD', 'ca': 'CAD', 'gb': 'GBP', 'fr': 'EUR', 'de': 'EUR', 'it': 'EUR', 'es': 'EUR',
+    'pt': 'EUR', 'nl': 'EUR', 'be': 'EUR', 'ch': 'CHF', 'at': 'EUR', 'se': 'SEK', 'no': 'NOK', 'dk': 'DKK',
+    'fi': 'EUR', 'pl': 'PLN', 'cz': 'CZK', 'hu': 'HUF', 'ro': 'RON', 'bg': 'BGN', 'hr': 'HRK',
+    'ru': 'RUB', 'ua': 'UAH', 'jp': 'JPY', 'cn': 'CNY', 'kr': 'KRW', 'in': 'INR', 'au': 'AUD', 'nz': 'NZD',
+    'za': 'ZAR', 'eg': 'EGP', 'il': 'ILS', 'tr': 'TRY', 'gr': 'EUR', 'ar': 'ARS', 'cl': 'CLP', 'co': 'COP',
+    'pe': 'PEN', 'mx': 'MXN', 've': 'VES', 'ec': 'USD', 'bo': 'BOB', 'py': 'PYG', 'uy': 'UYU'
+};
+
+// Mapeamento de idiomas para códigos Facebook
+const FACEBOOK_LANGUAGE_CODES = {
+    'pt': 'pt-BR', 'pt-br': 'pt-BR', 'pt-pt': 'pt-PT',
+    'en': 'en-US', 'en-us': 'en-US', 'en-gb': 'en-GB',
+    'es': 'es-ES', 'es-es': 'es-ES', 'es-mx': 'es-MX', 'es-ar': 'es-AR',
+    'fr': 'fr-FR', 'fr-ca': 'fr-CA',
+    'de': 'de-DE', 'it': 'it-IT', 'nl': 'nl-NL', 'ru': 'ru-RU',
+    'ja': 'ja-JP', 'ko': 'ko-KR', 'zh': 'zh-CN', 'zh-cn': 'zh-CN', 'zh-tw': 'zh-TW'
+};
+
+// Seletores de campos de formulário em múltiplos idiomas
+const INTERNATIONAL_FIELD_SELECTORS = {
+    firstName: [
+        // Português
+        '[name="contact[first_name]"], [name="customer[first_name]"], [name="first_name"]',
+        '[name="nome"], [name="NOME"], [name="primeiro_nome"]',
+        // Inglês
+        '[name="fname"], [name="firstname"], [name="given_name"]',
+        // Espanhol
+        '[name="nombre"], [name="primer_nombre"]',
+        // Francês
+        '[name="prenom"], [name="nom_prenom"]',
+        // Alemão
+        '[name="vorname"]',
+        // Italiano
+        '[name="nome_proprio"]',
+        // Genérico
+        '[data-field="first_name"], [data-type="first_name"]'
+    ].join(', '),
+    
+    lastName: [
+        // Português
+        '[name="contact[last_name]"], [name="customer[last_name]"], [name="last_name"]',
+        '[name="sobrenome"], [name="SOBRENOME"], [name="ultimo_nome"]',
+        // Inglês
+        '[name="lname"], [name="lastname"], [name="family_name"], [name="surname"]',
+        // Espanhol
+        '[name="apellido"], [name="apellidos"]',
+        // Francês
+        '[name="nom"], [name="nom_famille"]',
+        // Alemão
+        '[name="nachname"], [name="familienname"]',
+        // Italiano
+        '[name="cognome"]',
+        // Genérico
+        '[data-field="last_name"], [data-type="last_name"]'
+    ].join(', '),
+    
+    email: [
+        // Universal
+        '[name="contact[email]"], [name="customer[email]"], [name="email"], [name="EMAIL"]',
+        '[name="e-mail"], [name="mail"], [name="correo"]',
+        '[data-field="email"], [data-type="email"], [type="email"]'
+    ].join(', '),
+    
+    phone: [
+        // Português
+        '[name="contact[phone]"], [name="customer[phone]"], [name="phone"]',
+        '[name="telefone"], [name="TELEFONE"], [name="celular"]',
+        // Inglês
+        '[name="mobile"], [name="cell"], [name="telephone"]',
+        // Espanhol
+        '[name="telefono"], [name="movil"]',
+        // Francês
+        '[name="telephone"], [name="mobile"]',
+        // Alemão
+        '[name="telefon"], [name="handy"]',
+        // Italiano
+        '[name="telefono"], [name="cellulare"]',
+        // Genérico
+        '[data-field="phone"], [data-type="phone"], [type="tel"]'
+    ].join(', ')
+};
+
+// =============================================================================
+// FUNÇÕES DE GLOBALIZAÇÃO
+// =============================================================================
+
+// Detectar país do usuário (via init data do backend)
+function getUserCountry() {
+    return window.shopifyFBUserCountry || 'us'; // fallback para US
+}
+
+// Função para definir país detectado pelo backend
+function setDetectedCountry(country) {
+    if (country) {
+        window.shopifyFBUserCountry = country.toLowerCase();
+        console.log('🌍 País detectado pelo backend:', country);
+    }
+}
+
+// Normalizar telefone baseado no país
+function normalizePhoneByCountry(phone, country = null) {
+    if (!phone) return '';
+    
+    // Limpar telefone
+    const cleanPhone = phone.replace(/\s|-|\(|\)/g, '');
+    const userCountry = country || getUserCountry();
+    const countryCode = COUNTRY_PHONE_CODES[userCountry] || '1';
+    
+    // Se já tem código de país, manter
+    if (cleanPhone.length > 10 && !cleanPhone.startsWith('0')) {
+        return cleanPhone;
+    }
+    
+    // Adicionar código do país detectado
+    if (cleanPhone.startsWith('0')) {
+        return countryCode + cleanPhone.substring(1);
+    }
+    
+    return countryCode + cleanPhone;
+}
+
+// Detectar moeda baseada no país
+function getCurrencyByCountry(country = null) {
+    const userCountry = country || getUserCountry();
+    return COUNTRY_CURRENCIES[userCountry] || 'USD';
+}
+
+// Detectar idioma do usuário
+function detectUserLanguage() {
+    // Primeiro, verificar configuração manual
+    if (window.shopifyFBConfig?.language) {
+        return window.shopifyFBConfig.language;
+    }
+    
+    // Detectar do navegador
+    const browserLang = (navigator.language || navigator.userLanguage || 'en').toLowerCase();
+    
+    // Mapear para código Facebook
+    return FACEBOOK_LANGUAGE_CODES[browserLang] || 
+           FACEBOOK_LANGUAGE_CODES[browserLang.split('-')[0]] || 
+           'en-US';
+}
 
 // Função para obter cookies
 function getCookie(name) {
@@ -208,11 +368,11 @@ async function sendEvent(eventType, data = {}) {
 
     // Coleta automática de dados de formulários para eventos específicos
     if (eventType === "Lead" || eventType === "InitiateCheckout") {
-        // Detectar formulários Shopify automaticamente
-        const nameField = document.querySelector('[name="contact[first_name]"], [name="customer[first_name]"], [name="first_name"], [name="nome"], [name="NOME"]');
-        const lastNameField = document.querySelector('[name="contact[last_name]"], [name="customer[last_name]"], [name="last_name"], [name="sobrenome"], [name="SOBRENOME"]');
-        const emailField = document.querySelector('[name="contact[email]"], [name="customer[email]"], [name="email"], [name="EMAIL"]');
-        const phoneField = document.querySelector('[name="contact[phone]"], [name="customer[phone]"], [name="phone"], [name="telefone"], [name="TELEFONE"]');
+        // 🌍 GLOBAL: Detectar formulários com seletores internacionais
+        const nameField = document.querySelector(INTERNATIONAL_FIELD_SELECTORS.firstName);
+        const lastNameField = document.querySelector(INTERNATIONAL_FIELD_SELECTORS.lastName);
+        const emailField = document.querySelector(INTERNATIONAL_FIELD_SELECTORS.email);
+        const phoneField = document.querySelector(INTERNATIONAL_FIELD_SELECTORS.phone);
 
         if (nameField && nameField.value) {
             fn = nameField.value.trim().toLowerCase();
@@ -234,11 +394,8 @@ async function sendEvent(eventType, data = {}) {
         }
 
         if (phoneField && phoneField.value) {
-            ph = phoneField.value.replace(/\s|-|\(|\)/g, '');
-            // Adicionar código do país se não tiver
-            if (ph && !ph.startsWith('55')) {
-                ph = '55' + ph;
-            }
+            // 🌍 GLOBAL: Normalizar telefone baseado no país do usuário
+            ph = normalizePhoneByCountry(phoneField.value);
         }
 
         // Armazenar os dados nos cookies
@@ -307,8 +464,8 @@ async function sendEvent(eventType, data = {}) {
                 }
             }
 
-            // Adicionar parâmetros otimizados para melhor segmentação
-            pixelData.language = 'pt-BR';
+            // 🌍 GLOBAL: Adicionar parâmetros otimizados para melhor segmentação
+            pixelData.language = detectUserLanguage();
             pixelData.referrer_url = document.referrer || '';
             
             // Parâmetros específicos por tipo de evento
@@ -389,6 +546,11 @@ async function initPixel() {
 
     // Obter dados de inicialização da API
     const init = await sendEvent('Init') || {};
+    
+    // 🌍 GLOBAL: Definir país detectado para funções de globalização
+    if (init.detected_country) {
+        setDetectedCountry(init.detected_country);
+    }
 
     // Preparar dados do usuário para o Facebook Pixel
     let userData = {
@@ -410,8 +572,13 @@ async function initPixel() {
     if (ph) userData.ph = ph;
 
     // Inicializar o Facebook Pixel com os dados
-    const pixelId = window.shopifyFBConfig?.pixelId || '676999668497170';
-    fbq('init', pixelId, userData);
+    const pixelId = window.shopifyFBConfig?.pixelId;
+    if (pixelId) {
+        fbq('init', pixelId, userData);
+    } else {
+        console.error('❌ Pixel ID não configurado. Configure window.shopifyFBConfig.pixelId');
+        return;
+    }
     console.log('🚀 Facebook Pixel inicializado com dados:', userData);
 
     // Enviar PageView inicial com dados contextuais
@@ -580,7 +747,8 @@ function getShopifyProductData() {
         const price = parseFloat(priceText.replace(/[^\d.,]/g, '').replace(',', '.'));
         if (!isNaN(price)) {
             productData.value = formatCurrencyValue(price);
-            productData.currency = 'BRL';
+            // 🌍 GLOBAL: Detectar moeda baseada no país
+            productData.currency = getCurrencyByCountry();
         }
     }
 
@@ -731,7 +899,8 @@ function getCartData() {
         const total = parseFloat(totalText.replace(/[^\d.,]/g, '').replace(',', '.'));
         if (!isNaN(total)) {
             cartData.value = formatCurrencyValue(total);
-            cartData.currency = 'BRL';
+            // 🌍 GLOBAL: Detectar moeda baseada no país
+            cartData.currency = getCurrencyByCountry();
         }
     }
     
@@ -871,7 +1040,8 @@ function setupVideoTracking() {
 window.trackShopifyPurchase = function(orderData) {
     const purchaseData = {
         value: formatCurrencyValue(orderData.total_price),
-        currency: orderData.currency || 'BRL',
+        // 🌍 GLOBAL: Usar moeda fornecida ou detectar automaticamente
+        currency: orderData.currency || getCurrencyByCountry(),
         content_ids: orderData.line_items?.map(item => item.variant_id) || [],
         order_id: orderData.order_id
     };

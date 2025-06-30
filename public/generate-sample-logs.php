@@ -85,7 +85,7 @@ foreach ($eventos as $i => $evento) {
     
     // 4. Log de configuração do pixel
     PixelLogger::logPixelConfig('shopify_store', [
-        'pixel_id' => '676999668497170',
+        'pixel_id' => env('CONVERSIONS_API_PIXEL_ID', 'PIXEL_ID_NOT_SET'),
         'access_token' => 'token_presente',
         'test_code' => 'test_code_presente'
     ]);
