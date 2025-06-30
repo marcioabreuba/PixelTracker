@@ -189,15 +189,15 @@ class EventsController extends Controller
             $contentId = $request->post('contentId');
             
             // Usar sempre configuração do .env para sistema single-tenant
-            Config::set('conversions-api.pixel_id', env('FACEBOOK_PIXEL_ID'));
-            Config::set('conversions-api.access_token', env('FACEBOOK_ACCESS_TOKEN'));
-            Config::set('conversions-api.test_code', env('FACEBOOK_TEST_CODE', 'TEST57660'));
+            Config::set('conversions-api.pixel_id', env('CONVERSIONS_API_PIXEL_ID'));
+            Config::set('conversions-api.access_token', env('CONVERSIONS_API_ACCESS_TOKEN'));
+            Config::set('conversions-api.test_code', env('CONVERSIONS_API_TEST_CODE', 'TEST57660'));
             
             // Log da configuração do pixel (sucesso)
             PixelLogger::logPixelConfig($contentId, [
-                'pixel_id' => env('FACEBOOK_PIXEL_ID'),
+                'pixel_id' => env('CONVERSIONS_API_PIXEL_ID'),
                 'access_token' => '***HIDDEN***',
-                'test_code' => env('FACEBOOK_TEST_CODE', 'TEST57660'),
+                'test_code' => env('CONVERSIONS_API_TEST_CODE', 'TEST57660'),
                 'source' => 'env_default'
             ]);
             
