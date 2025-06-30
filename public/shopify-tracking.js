@@ -355,7 +355,10 @@ function captureAndStoreFbclid() {
 
 // Função principal para enviar eventos
 async function sendEvent(eventType, data = {}) {
-    const contentId = window.shopifyFBConfig?.contentId || 'shopify_store';
+    // 🎯 NOVO: Usar content_ids inteligentes baseados no contexto
+    const intelligentContentIds = getIntelligentContentIds(eventType, data);
+    const contentId = intelligentContentIds[0]; // Para compatibilidade com API backend
+    
     const apiUrl = window.shopifyFBConfig?.apiUrl || 'https://traqueamentophp.onrender.com';
     const event_source_url = window.location.href;
     const _fbc = getAdvancedFbc(); // Usar função avançada de captura do _fbc
@@ -450,19 +453,11 @@ async function sendEvent(eventType, data = {}) {
             
             // Preparar dados para o pixel
             const pixelData = {};
-            if (data.content_ids) pixelData.content_ids = data.content_ids;
             if (data.value) pixelData.value = data.value;
             if (data.currency) pixelData.currency = data.currency;
             
-            // Adicionar content_ids padrão apenas se nenhum foi fornecido nos dados específicos
-            if (!pixelData.content_ids) {
-                // Para eventos contextuais, usar dados específicos se disponíveis
-                if (data.content_ids && data.content_ids.length > 0) {
-                    pixelData.content_ids = data.content_ids;
-                } else {
-                    pixelData.content_ids = [contentId];
-                }
-            }
+            // 🎯 NOVO: Usar content_ids inteligentes sempre
+            pixelData.content_ids = intelligentContentIds;
 
             // 🌍 GLOBAL: Adicionar parâmetros otimizados para melhor segmentação
             pixelData.language = detectUserLanguage();
@@ -1097,3 +1092,248 @@ window.sendEvent = sendEvent;
 window.initPixel = initPixel;
 window.getAdvancedFbc = getAdvancedFbc;
 window.captureAndStoreFbclid = captureAndStoreFbclid;
+
+// 🎯 NOVA FUNÇÃO: Gerar content_ids inteligentes baseados no contexto
+function getIntelligentContentIds(eventType, data = {}) {
+    // Se já tem content_ids específicos nos dados, usar eles
+    if (data.content_ids && data.content_ids.length > 0) {
+        return data.content_ids;
+    }
+    
+    // Lógica específica por tipo de evento
+    switch(eventType) {
+        case 'ViewContent':
+        case 'AddToCart':
+            return getProductContentIds();
+            
+        case 'ViewList':
+            return getCategoryContentIds();
+            
+        case 'ViewCart':
+        case 'InitiateCheckout':
+            return getCartContentIds();
+            
+        case 'PageView':
+            return getPageContentIds();
+            
+        case 'Search':
+            return getSearchContentIds(data.search_string);
+            
+        case 'Lead':
+            return getLeadContentIds();
+            
+        case 'ViewHome':
+            return ['homepage'];
+            
+        // Eventos de engajamento (scroll, video, timer)
+        case 'Scroll_25':
+        case 'Scroll_50':
+        case 'Scroll_75':
+        case 'Scroll_90':
+        case 'Timer_1min':
+            return getEngagementContentIds();
+            
+        case 'PlayVideo':
+        case 'ViewVideo_25':
+        case 'ViewVideo_50':
+        case 'ViewVideo_75':
+        case 'ViewVideo_90':
+            return getVideoContentIds();
+            
+        default:
+            return getGenericContentIds();
+    }
+}
+
+// Função para obter content_ids de produtos
+function getProductContentIds() {
+    // Tentar obter variant ID do formulário
+    const productForm = document.querySelector('form[action*="/cart/add"]');
+    if (productForm) {
+        const variantInput = productForm.querySelector('[name="id"]');
+        if (variantInput && variantInput.value) {
+            return [variantInput.value];
+        }
+    }
+    
+    // Fallback: extrair product handle da URL
+    const pathParts = window.location.pathname.split('/');
+    if (pathParts.includes('products') && pathParts.length > 2) {
+        const productIndex = pathParts.indexOf('products');
+        if (pathParts[productIndex + 1]) {
+            const productHandle = pathParts[productIndex + 1];
+            return [`product_${productHandle}`];
+        }
+    }
+    
+    // Fallback final: usar título da página
+    const productTitle = document.querySelector('h1.product-title, .product-title h1, h1[class*="product"], .product-meta h1');
+    if (productTitle) {
+        const normalizedTitle = productTitle.textContent.trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9\s]/g, '')
+            .replace(/\s+/g, '_')
+            .substring(0, 50);
+        return [`product_${normalizedTitle}`];
+    }
+    
+    return ['product_unknown'];
+}
+
+// Função para obter content_ids de categorias/coleções
+function getCategoryContentIds() {
+    const contentIds = [];
+    
+    // Tentar coletar IDs dos produtos visíveis na página
+    const productElements = document.querySelectorAll('[data-product-id], [data-variant-id]');
+    productElements.forEach((element, index) => {
+        if (index < 10) { // Limitar a 10 produtos para não sobrecarregar
+            const productId = element.dataset.productId || element.dataset.variantId;
+            if (productId) {
+                contentIds.push(productId);
+            }
+        }
+    });
+    
+    if (contentIds.length > 0) {
+        return contentIds;
+    }
+    
+    // Fallback: usar collection handle da URL
+    const pathParts = window.location.pathname.split('/');
+    if (pathParts.includes('collections') && pathParts.length > 2) {
+        const collectionIndex = pathParts.indexOf('collections');
+        if (pathParts[collectionIndex + 1]) {
+            const collectionHandle = pathParts[collectionIndex + 1];
+            return [`collection_${collectionHandle}`];
+        }
+    }
+    
+    // Fallback: usar título da coleção
+    const collectionTitle = document.querySelector('h1.collection-title, .collection-header h1, .page-title');
+    if (collectionTitle) {
+        const normalizedTitle = collectionTitle.textContent.trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9\s]/g, '')
+            .replace(/\s+/g, '_')
+            .substring(0, 30);
+        return [`collection_${normalizedTitle}`];
+    }
+    
+    return ['collection_unknown'];
+}
+
+// Função para obter content_ids do carrinho
+function getCartContentIds() {
+    const contentIds = [];
+    
+    // Tentar coletar IDs dos produtos no carrinho
+    const cartItems = document.querySelectorAll('.cart-item, [data-cart-item]');
+    cartItems.forEach(item => {
+        const productId = item.dataset.productId || item.dataset.variantId;
+        if (productId) {
+            contentIds.push(productId);
+        }
+    });
+    
+    if (contentIds.length > 0) {
+        return contentIds;
+    }
+    
+    // Se carrinho vazio
+    return ['empty_cart'];
+}
+
+// Função para obter content_ids de páginas gerais
+function getPageContentIds() {
+    const path = window.location.pathname;
+    
+    // Páginas específicas
+    if (path === '/' || path === '') return ['homepage'];
+    if (path.includes('/contact')) return ['contact_page'];
+    if (path.includes('/about')) return ['about_page'];
+    if (path.includes('/cart')) return getCartContentIds();
+    if (path.includes('/products/')) return getProductContentIds();
+    if (path.includes('/collections/')) return getCategoryContentIds();
+    
+    // Página genérica baseada na URL
+    const normalizedPath = path
+        .replace(/^\/+|\/+$/g, '') // Remove barras do início/fim
+        .replace(/\//g, '_') // Substitui barras por underscore
+        .toLowerCase()
+        .replace(/[^a-z0-9_]/g, '') // Remove caracteres especiais
+        .substring(0, 30); // Limita tamanho
+    
+    return normalizedPath ? [`page_${normalizedPath}`] : ['page_unknown'];
+}
+
+// Função para obter content_ids de busca
+function getSearchContentIds(searchQuery) {
+    if (!searchQuery) {
+        // Tentar obter da URL
+        const urlParams = new URLSearchParams(window.location.search);
+        searchQuery = urlParams.get('q') || urlParams.get('query') || urlParams.get('search');
+    }
+    
+    if (searchQuery) {
+        const normalizedQuery = searchQuery.trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9\s]/g, '')
+            .replace(/\s+/g, '_')
+            .substring(0, 30);
+        return [`search_${normalizedQuery}`];
+    }
+    
+    return ['search_unknown'];
+}
+
+// Função para obter content_ids de formulários (Lead)
+function getLeadContentIds() {
+    // Baseado na página onde o formulário está
+    if (window.location.pathname.includes('/products/')) {
+        return getProductContentIds();
+    } else if (window.location.pathname.includes('/collections/')) {
+        return getCategoryContentIds();
+    } else if (window.location.pathname.includes('/contact')) {
+        return ['lead_contact'];
+    } else if (window.location.pathname === '/' || window.location.pathname === '') {
+        return ['lead_homepage'];
+    }
+    
+    return ['lead_general'];
+}
+
+// Função para obter content_ids de eventos de engajamento
+function getEngagementContentIds() {
+    // Usar o contexto da página atual
+    if (window.location.pathname.includes('/products/')) {
+        return getProductContentIds();
+    } else if (window.location.pathname.includes('/collections/')) {
+        return getCategoryContentIds();
+    } else if (window.location.pathname.includes('/cart')) {
+        return getCartContentIds();
+    }
+    
+    return getPageContentIds();
+}
+
+// Função para obter content_ids de vídeos
+function getVideoContentIds() {
+    // Tentar obter ID do vídeo se disponível
+    const videos = document.querySelectorAll('video[data-video-id], video[id]');
+    if (videos.length > 0) {
+        const videoId = videos[0].dataset.videoId || videos[0].id;
+        if (videoId) {
+            return [`video_${videoId}`];
+        }
+    }
+    
+    // Fallback: usar contexto da página + indicador de vídeo
+    const baseIds = getEngagementContentIds();
+    return baseIds.map(id => `${id}_video`);
+}
+
+// Função para content_ids genéricos (último recurso)
+function getGenericContentIds() {
+    return getPageContentIds();
+}
