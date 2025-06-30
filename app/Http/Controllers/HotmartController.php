@@ -60,19 +60,18 @@ class HotmartController extends Controller
             $em = $user->em ?? '';
             $ph = $user->ph ?? '';
 
-            // Configurar pixel baseado no contentId
-            $domains = config('conversions.domains');
-            if (isset($domains[$contentId])) {
-                $config = $domains[$contentId];
-                Config::set('conversions-api.pixel_id', $config['pixel_id']);
-                Config::set('conversions-api.access_token', $config['access_token']);
-                Config::set('conversions-api.test_code', $config['test_code']);
-                
-                // Log da configuração do pixel
-                PixelLogger::logPixelConfig($contentId, $config);
-            } else {
-                PixelLogger::logError('Configuração Pixel Hotmart', 'Content ID não encontrado: ' . $contentId);
-            }
+            // Configurar pixel usando configuração padrão do .env (single tenant)
+            Config::set('conversions-api.pixel_id', env('FACEBOOK_PIXEL_ID'));
+            Config::set('conversions-api.access_token', env('FACEBOOK_ACCESS_TOKEN'));
+            Config::set('conversions-api.test_code', env('FACEBOOK_TEST_CODE', 'TEST57660'));
+            
+            // Log da configuração do pixel (sucesso)
+            PixelLogger::logPixelConfig($contentId, [
+                'pixel_id' => env('FACEBOOK_PIXEL_ID'),
+                'access_token' => '***HIDDEN***',
+                'test_code' => env('FACEBOOK_TEST_CODE', 'TEST57660'),
+                'source' => 'env_default'
+            ]);
 
             $event = Purchase::create();
             $advancedMatching = $event->getUserData()

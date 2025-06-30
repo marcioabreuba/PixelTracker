@@ -75,19 +75,18 @@ class ShopifyController extends Controller
             $ct = $user->ct ?? strtolower($billing_address['city'] ?? '');
             $zp = $user->zp ?? ''; // Sempre usar apenas o zip do geoIP
 
-            // Configurar credenciais do Facebook
-            $domains = config('conversions.domains');
-            if (isset($domains[$contentId])) {
-                $config = $domains[$contentId];
-                Config::set('conversions-api.pixel_id', $config['pixel_id']);
-                Config::set('conversions-api.access_token', $config['access_token']);
-                Config::set('conversions-api.test_code', $config['test_code']);
-                
-                // Log da configuração do pixel
-                PixelLogger::logPixelConfig($contentId, $config);
-            } else {
-                PixelLogger::logError('Configuração Pixel Shopify', 'Content ID não encontrado: ' . $contentId);
-            }
+            // Configurar credenciais do Facebook usando configuração padrão do .env
+            Config::set('conversions-api.pixel_id', env('FACEBOOK_PIXEL_ID'));
+            Config::set('conversions-api.access_token', env('FACEBOOK_ACCESS_TOKEN'));
+            Config::set('conversions-api.test_code', env('FACEBOOK_TEST_CODE', 'TEST57660'));
+            
+            // Log da configuração do pixel (sucesso)
+            PixelLogger::logPixelConfig($contentId, [
+                'pixel_id' => env('FACEBOOK_PIXEL_ID'),
+                'access_token' => '***HIDDEN***',
+                'test_code' => env('FACEBOOK_TEST_CODE', 'TEST57660'),
+                'source' => 'env_default'
+            ]);
 
             // Criar evento de Purchase
             $event = Purchase::create();
@@ -169,14 +168,10 @@ class ShopifyController extends Controller
 
             $contentId = $user->content_id ?? 'shopify_store';
             
-            // Configurar credenciais
-            $domains = config('conversions.domains');
-            if (isset($domains[$contentId])) {
-                $config = $domains[$contentId];
-                Config::set('conversions-api.pixel_id', $config['pixel_id']);
-                Config::set('conversions-api.access_token', $config['access_token']);
-                Config::set('conversions-api.test_code', $config['test_code']);
-            }
+            // Configurar credenciais usando configuração padrão do .env
+            Config::set('conversions-api.pixel_id', env('FACEBOOK_PIXEL_ID'));
+            Config::set('conversions-api.access_token', env('FACEBOOK_ACCESS_TOKEN'));
+            Config::set('conversions-api.test_code', env('FACEBOOK_TEST_CODE', 'TEST57660'));
 
             $event = AddToCart::create()
                 ->setEventSourceUrl($validatedData['event_source_url'])
